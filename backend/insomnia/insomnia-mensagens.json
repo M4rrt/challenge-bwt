@@ -1,0 +1,252 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-08-05T00:00:00.000Z",
+  "__export_source": "manual:chat-app-ticket-05",
+  "resources": [
+    {
+      "_id": "wrk_chatapp_msgs",
+      "_type": "workspace",
+      "name": "Chat App — Ticket 05 (Mensagens)",
+      "description": "Auth (ticket 03) + Conversations (ticket 04) + Messages (ticket 05) manual test flow.",
+      "scope": "collection"
+    },
+    {
+      "_id": "env_base_msgs",
+      "_type": "environment",
+      "parentId": "wrk_chatapp_msgs",
+      "name": "Base Environment",
+      "data": {
+        "base_url": "http://localhost:8000",
+        "token_a": "",
+        "token_b": "",
+        "token_c": "",
+        "user_a_id": "",
+        "user_b_id": "",
+        "user_c_id": "",
+        "conversation_id": ""
+      },
+      "isPrivate": false,
+      "metaSortKey": 0
+    },
+    {
+      "_id": "fld_msgs_auth",
+      "_type": "request_group",
+      "parentId": "wrk_chatapp_msgs",
+      "name": "01 - Auth (register + login 3 users)",
+      "description": "Run in order. After each register, copy the response `id` into the matching user_x_id env var. After each login, copy `access_token` into the matching token_x env var. User C never joins the conversation — it exists to prove isolation on the message endpoints.",
+      "metaSortKey": 0
+    },
+    {
+      "_id": "req_msgs_register_a",
+      "_type": "request",
+      "parentId": "fld_msgs_auth",
+      "name": "Register User A (ana)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/register",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"ana@example.com\",\n  \"password\": \"senha-forte-123\"\n}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "description": "Copy response `id` -> env `user_a_id`.",
+      "metaSortKey": 0
+    },
+    {
+      "_id": "req_msgs_register_b",
+      "_type": "request",
+      "parentId": "fld_msgs_auth",
+      "name": "Register User B (beto)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/register",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"beto@example.com\",\n  \"password\": \"senha-forte-123\"\n}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "description": "Copy response `id` -> env `user_b_id`.",
+      "metaSortKey": 1
+    },
+    {
+      "_id": "req_msgs_register_c",
+      "_type": "request",
+      "parentId": "fld_msgs_auth",
+      "name": "Register User C (carla, outsider)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/register",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"carla@example.com\",\n  \"password\": \"senha-forte-123\"\n}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "description": "Copy response `id` -> env `user_c_id`. This user is never added to the conversation below.",
+      "metaSortKey": 2
+    },
+    {
+      "_id": "req_msgs_login_a",
+      "_type": "request",
+      "parentId": "fld_msgs_auth",
+      "name": "Login User A",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/login",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"ana@example.com\",\n  \"password\": \"senha-forte-123\"\n}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "description": "Copy response `access_token` -> env `token_a`.",
+      "metaSortKey": 3
+    },
+    {
+      "_id": "req_msgs_login_b",
+      "_type": "request",
+      "parentId": "fld_msgs_auth",
+      "name": "Login User B",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/login",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"beto@example.com\",\n  \"password\": \"senha-forte-123\"\n}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "description": "Copy response `access_token` -> env `token_b`.",
+      "metaSortKey": 4
+    },
+    {
+      "_id": "req_msgs_login_c",
+      "_type": "request",
+      "parentId": "fld_msgs_auth",
+      "name": "Login User C",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/login",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"carla@example.com\",\n  \"password\": \"senha-forte-123\"\n}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "description": "Copy response `access_token` -> env `token_c`.",
+      "metaSortKey": 5
+    },
+    {
+      "_id": "fld_msgs_setup",
+      "_type": "request_group",
+      "parentId": "wrk_chatapp_msgs",
+      "name": "02 - Setup (create the conversation)",
+      "description": "Run after the Auth folder so token_x/user_x_id env vars are filled in.",
+      "metaSortKey": 1
+    },
+    {
+      "_id": "req_msgs_create_conversation",
+      "_type": "request",
+      "parentId": "fld_msgs_setup",
+      "name": "Create 1:1 conversation (A -> B)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/conversations",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"participant_user_ids\": [\"{{ _.user_b_id }}\"]\n}"
+      },
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Authorization", "value": "Bearer {{ _.token_a }}" }
+      ],
+      "description": "Expect 201. Copy response `id` -> env `conversation_id`. User C is deliberately not a participant.",
+      "metaSortKey": 0
+    },
+    {
+      "_id": "fld_msgs_messages",
+      "_type": "request_group",
+      "parentId": "wrk_chatapp_msgs",
+      "name": "03 - Messages (ticket 05)",
+      "description": "Run after Setup so conversation_id is filled in.",
+      "metaSortKey": 2
+    },
+    {
+      "_id": "req_msgs_send_a",
+      "_type": "request",
+      "parentId": "fld_msgs_messages",
+      "name": "Send message as A (participant)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/conversations/{{ _.conversation_id }}/messages",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"body\": \"oi, tudo bem?\"\n}"
+      },
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Authorization", "value": "Bearer {{ _.token_a }}" }
+      ],
+      "description": "Expect 201, sender_id == user_a_id, sender_type == 'user'.",
+      "metaSortKey": 0
+    },
+    {
+      "_id": "req_msgs_send_b",
+      "_type": "request",
+      "parentId": "fld_msgs_messages",
+      "name": "Send message as B (participant)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/conversations/{{ _.conversation_id }}/messages",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"body\": \"tudo bem, e voce?\"\n}"
+      },
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Authorization", "value": "Bearer {{ _.token_b }}" }
+      ],
+      "description": "Expect 201, sender_id == user_b_id.",
+      "metaSortKey": 1
+    },
+    {
+      "_id": "req_msgs_send_c_forbidden",
+      "_type": "request",
+      "parentId": "fld_msgs_messages",
+      "name": "Send message as C (non-participant, expect 404)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/conversations/{{ _.conversation_id }}/messages",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"body\": \"posso entrar nessa conversa?\"\n}"
+      },
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Authorization", "value": "Bearer {{ _.token_c }}" }
+      ],
+      "description": "C is not a participant. Expect 404 'conversation not found' — proves isolation on the write path (404, not 403, so existence isn't leaked).",
+      "metaSortKey": 2
+    },
+    {
+      "_id": "req_msgs_fetch_a",
+      "_type": "request",
+      "parentId": "fld_msgs_messages",
+      "name": "Fetch backlog as A (participant)",
+      "method": "GET",
+      "url": "{{ _.base_url }}/conversations/{{ _.conversation_id }}/messages",
+      "headers": [{ "name": "Authorization", "value": "Bearer {{ _.token_a }}" }],
+      "description": "Expect 200 with the 2 messages above, ordered oldest -> newest.",
+      "metaSortKey": 3
+    },
+    {
+      "_id": "req_msgs_fetch_b",
+      "_type": "request",
+      "parentId": "fld_msgs_messages",
+      "name": "Fetch backlog as B (participant)",
+      "method": "GET",
+      "url": "{{ _.base_url }}/conversations/{{ _.conversation_id }}/messages",
+      "headers": [{ "name": "Authorization", "value": "Bearer {{ _.token_b }}" }],
+      "description": "Expect the same 2 messages, same order, as the request above.",
+      "metaSortKey": 4
+    },
+    {
+      "_id": "req_msgs_fetch_c_forbidden",
+      "_type": "request",
+      "parentId": "fld_msgs_messages",
+      "name": "Fetch backlog as C (non-participant, expect 404)",
+      "method": "GET",
+      "url": "{{ _.base_url }}/conversations/{{ _.conversation_id }}/messages",
+      "headers": [{ "name": "Authorization", "value": "Bearer {{ _.token_c }}" }],
+      "description": "C is not a participant. Expect 404 'conversation not found' — proves isolation on the read path.",
+      "metaSortKey": 5
+    }
+  ]
+}
