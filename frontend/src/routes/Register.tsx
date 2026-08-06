@@ -1,0 +1,58 @@
+import type { FormEvent } from 'react'
+import { useState } from 'react'
+import { useMutation } from '@tanstack/react-query'
+import { Link, useNavigate } from 'react-router-dom'
+import { register as registerRequest } from '../lib/api'
+
+function Register() {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const navigate = useNavigate()
+
+  const mutation = useMutation({
+    mutationFn: () => registerRequest(email, password),
+    onSuccess: () => {
+      navigate('/login')
+    },
+  })
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    mutation.mutate()
+  }
+
+  return (
+    <main>
+      <h1>Registrar</h1>
+      <form onSubmit={handleSubmit}>
+        <label>
+          Email
+          <input
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            required
+          />
+        </label>
+        <label>
+          Senha
+          <input
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            required
+          />
+        </label>
+        <button type="submit" disabled={mutation.isPending}>
+          Criar conta
+        </button>
+        {mutation.isError && <p role="alert">Não foi possível criar a conta</p>}
+      </form>
+      <p>
+        Já tem conta? <Link to="/login">Entrar</Link>
+      </p>
+    </main>
+  )
+}
+
+export default Register
