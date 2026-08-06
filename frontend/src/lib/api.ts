@@ -42,6 +42,7 @@ export interface LoginResponse {
 export interface RegisterResponse {
   id: string
   email: string
+  username: string
 }
 
 export function login(email: string, password: string): Promise<LoginResponse> {
@@ -51,9 +52,13 @@ export function login(email: string, password: string): Promise<LoginResponse> {
   })
 }
 
-export function register(email: string, password: string): Promise<RegisterResponse> {
+export function register(
+  email: string,
+  username: string,
+  password: string,
+): Promise<RegisterResponse> {
   return apiFetch<RegisterResponse>('/auth/register', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, username, password }),
   })
 }

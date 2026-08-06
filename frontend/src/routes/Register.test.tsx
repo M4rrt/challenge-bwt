@@ -31,11 +31,12 @@ beforeEach(() => {
 
 describe('Register', () => {
   it('navigates to /login after a successful registration', async () => {
-    vi.mocked(register).mockResolvedValue({ id: 'user-1', email: 'ana@example.com' })
+    vi.mocked(register).mockResolvedValue({ id: 'user-1', email: 'ana@example.com', username: 'ana' })
     const user = userEvent.setup()
     renderRegister()
 
     await user.type(screen.getByLabelText('Email'), 'ana@example.com')
+    await user.type(screen.getByLabelText('Nome de usuário'), 'ana')
     await user.type(screen.getByLabelText('Senha'), 'Senha-Forte-123')
     await user.click(screen.getByRole('button', { name: 'Criar conta' }))
 
@@ -48,6 +49,7 @@ describe('Register', () => {
     renderRegister()
 
     await user.type(screen.getByLabelText('Email'), 'dup@example.com')
+    await user.type(screen.getByLabelText('Nome de usuário'), 'dup')
     await user.type(screen.getByLabelText('Senha'), 'Senha-Forte-123')
     await user.click(screen.getByRole('button', { name: 'Criar conta' }))
 
@@ -63,6 +65,7 @@ describe('Register', () => {
     renderRegister()
 
     await user.type(screen.getByLabelText('Email'), 'ana@example.com')
+    await user.type(screen.getByLabelText('Nome de usuário'), 'ana')
     await user.type(screen.getByLabelText('Senha'), 'weak')
     await user.click(screen.getByRole('button', { name: 'Criar conta' }))
 

@@ -6,11 +6,12 @@ import { ApiError, register as registerRequest } from '../lib/api'
 
 function Register() {
   const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const navigate = useNavigate()
 
   const mutation = useMutation({
-    mutationFn: () => registerRequest(email, password),
+    mutationFn: () => registerRequest(email, username, password),
     onSuccess: () => {
       navigate('/login')
     },
@@ -31,6 +32,15 @@ function Register() {
             type="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
+            required
+          />
+        </label>
+        <label>
+          Nome de usuário
+          <input
+            type="text"
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
             required
           />
         </label>

@@ -31,3 +31,5 @@ End-to-end flow (register → login → `/conversas` → reload → logout) veri
 Known follow-up debt (Minor, deliberately not fixed in this ticket): `api.test.ts` doesn't assert the *absence* of the `Authorization` header when no token is passed; the password-policy error text in `Register.tsx` is a hand-copied duplicate of the backend validator's message (no shared source of truth); 422 on register is treated as "weak password" but would also fire on a malformed email.
 
 (Home → `/login` link added afterward, commit `6493a80`.)
+
+(`Register.tsx`/`api.ts` amended afterward to collect and send `username`, once ticket 15 made it a required registration field.)

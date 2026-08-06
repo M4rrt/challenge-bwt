@@ -41,19 +41,22 @@ describe('login', () => {
 describe('register', () => {
   it('posts credentials to /auth/register and returns the created user', async () => {
     vi.mocked(fetch).mockResolvedValue(
-      new Response(JSON.stringify({ id: 'user-1', email: 'ana@example.com' }), { status: 201 }),
+      new Response(
+        JSON.stringify({ id: 'user-1', email: 'ana@example.com', username: 'ana' }),
+        { status: 201 },
+      ),
     )
 
-    const result = await register('ana@example.com', 'Senha-Forte-123')
+    const result = await register('ana@example.com', 'ana', 'Senha-Forte-123')
 
     expect(fetch).toHaveBeenCalledWith(
       'http://localhost:8000/auth/register',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ email: 'ana@example.com', password: 'Senha-Forte-123' }),
+        body: JSON.stringify({ email: 'ana@example.com', username: 'ana', password: 'Senha-Forte-123' }),
       }),
     )
-    expect(result).toEqual({ id: 'user-1', email: 'ana@example.com' })
+    expect(result).toEqual({ id: 'user-1', email: 'ana@example.com', username: 'ana' })
   })
 })
 
