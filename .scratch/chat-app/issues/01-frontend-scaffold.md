@@ -4,10 +4,10 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] `frontend/` scaffolded with Vite + React + TypeScript
-- [ ] TanStack Query provider configured
-- [ ] Router in place (e.g. React Router) with a placeholder route
-- [ ] `frontend/README.md` documents how to run it locally
-- [ ] App builds and runs (`npm run dev`) without errors
+- [x] `frontend/` scaffolded with Vite + React + TypeScript
+- [x] TanStack Query provider configured
+- [x] Router in place (e.g. React Router) with a placeholder route
+- [x] `frontend/README.md` documents how to run it locally
+- [x] App builds and runs (`npm run dev`) without errors
