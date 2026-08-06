@@ -1,0 +1,214 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-08-06T00:00:00.000Z",
+  "__export_source": "manual:chat-app-ticket-06",
+  "resources": [
+    {
+      "_id": "wrk_chatapp_ws",
+      "_type": "workspace",
+      "name": "Chat App — Ticket 06 (WebSocket + Redis)",
+      "description": "Auth (03) + Conversations (04) + Messages (05) + real-time WebSocket delivery (06) manual test flow.",
+      "scope": "collection"
+    },
+    {
+      "_id": "env_base_ws",
+      "_type": "environment",
+      "parentId": "wrk_chatapp_ws",
+      "name": "Base Environment",
+      "data": {
+        "base_url": "http://localhost:8000",
+        "ws_base_url": "ws://localhost:8000",
+        "token_a": "",
+        "token_b": "",
+        "token_c": "",
+        "user_a_id": "",
+        "user_b_id": "",
+        "user_c_id": "",
+        "conversation_id": ""
+      },
+      "isPrivate": false,
+      "metaSortKey": 0
+    },
+    {
+      "_id": "fld_ws_auth",
+      "_type": "request_group",
+      "parentId": "wrk_chatapp_ws",
+      "name": "01 - Auth (register + login 3 users)",
+      "description": "Run in order. After each register, copy the response `id` into the matching user_x_id env var. After each login, copy `access_token` into the matching token_x env var. User C never joins the conversation — used to prove the WebSocket also rejects non-participants.",
+      "metaSortKey": 0
+    },
+    {
+      "_id": "req_ws_register_a",
+      "_type": "request",
+      "parentId": "fld_ws_auth",
+      "name": "Register User A (ana)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/register",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"ana@example.com\",\n  \"username\": \"ana\",\n  \"password\": \"Senha-Forte-123\"\n}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "description": "Copy response `id` -> env `user_a_id`.",
+      "metaSortKey": 0
+    },
+    {
+      "_id": "req_ws_register_b",
+      "_type": "request",
+      "parentId": "fld_ws_auth",
+      "name": "Register User B (beto)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/register",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"beto@example.com\",\n  \"username\": \"beto\",\n  \"password\": \"Senha-Forte-123\"\n}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "description": "Copy response `id` -> env `user_b_id`.",
+      "metaSortKey": 1
+    },
+    {
+      "_id": "req_ws_register_c",
+      "_type": "request",
+      "parentId": "fld_ws_auth",
+      "name": "Register User C (carla, outsider)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/register",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"carla@example.com\",\n  \"username\": \"carla\",\n  \"password\": \"Senha-Forte-123\"\n}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "description": "Copy response `id` -> env `user_c_id`. This user is never added to the conversation below.",
+      "metaSortKey": 2
+    },
+    {
+      "_id": "req_ws_login_a",
+      "_type": "request",
+      "parentId": "fld_ws_auth",
+      "name": "Login User A",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/login",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"ana@example.com\",\n  \"password\": \"Senha-Forte-123\"\n}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "description": "Copy response `access_token` -> env `token_a`.",
+      "metaSortKey": 3
+    },
+    {
+      "_id": "req_ws_login_b",
+      "_type": "request",
+      "parentId": "fld_ws_auth",
+      "name": "Login User B",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/login",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"beto@example.com\",\n  \"password\": \"Senha-Forte-123\"\n}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "description": "Copy response `access_token` -> env `token_b`.",
+      "metaSortKey": 4
+    },
+    {
+      "_id": "req_ws_login_c",
+      "_type": "request",
+      "parentId": "fld_ws_auth",
+      "name": "Login User C",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/login",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"carla@example.com\",\n  \"password\": \"Senha-Forte-123\"\n}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "description": "Copy response `access_token` -> env `token_c`.",
+      "metaSortKey": 5
+    },
+    {
+      "_id": "fld_ws_setup",
+      "_type": "request_group",
+      "parentId": "wrk_chatapp_ws",
+      "name": "02 - Setup (create the conversation)",
+      "description": "Run after the Auth folder so token_x/user_x_id env vars are filled in.",
+      "metaSortKey": 1
+    },
+    {
+      "_id": "req_ws_create_conversation",
+      "_type": "request",
+      "parentId": "fld_ws_setup",
+      "name": "Create 1:1 conversation (A -> B)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/conversations",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"participant_user_ids\": [\"{{ _.user_b_id }}\"]\n}"
+      },
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Authorization", "value": "Bearer {{ _.token_a }}" }
+      ],
+      "description": "Expect 201. Copy response `id` -> env `conversation_id`. User C is deliberately not a participant.",
+      "metaSortKey": 0
+    },
+    {
+      "_id": "fld_ws_realtime",
+      "_type": "request_group",
+      "parentId": "wrk_chatapp_ws",
+      "name": "03 - Real-time (ticket 06)",
+      "description": "1. Open 'Connect as B' first and leave it open. 2. Send 'Send message as A' from folder 04. 3. Watch the message arrive live in B's WebSocket response pane. 4. Separately, open 'Connect as C (outsider)' and confirm it closes immediately with code 1008.",
+      "metaSortKey": 2
+    },
+    {
+      "_id": "req_ws_connect_b",
+      "_type": "websocket_request",
+      "parentId": "fld_ws_realtime",
+      "name": "Connect as B (participant) — expect open + live delivery",
+      "url": "{{ _.ws_base_url }}/websocket/conversations/{{ _.conversation_id }}?token={{ _.token_b }}",
+      "headers": [],
+      "authentication": {},
+      "description": "Click Connect and leave this tab open. Then run 'Send message as A' (folder 04) — the message should appear here within ~1s.",
+      "metaSortKey": 0
+    },
+    {
+      "_id": "req_ws_connect_c",
+      "_type": "websocket_request",
+      "parentId": "fld_ws_realtime",
+      "name": "Connect as C (non-participant) — expect immediate close, code 1008",
+      "url": "{{ _.ws_base_url }}/websocket/conversations/{{ _.conversation_id }}?token={{ _.token_c }}",
+      "headers": [],
+      "authentication": {},
+      "description": "Click Connect. The connection should close immediately (before any 'open' event settles) with close code 1008 — C is not a participant, and the server never accepts the handshake.",
+      "metaSortKey": 1
+    },
+    {
+      "_id": "fld_ws_trigger",
+      "_type": "request_group",
+      "parentId": "wrk_chatapp_ws",
+      "name": "04 - Trigger (send while B is connected)",
+      "description": "Run this while 'Connect as B' (folder 03) is open, to see the live delivery.",
+      "metaSortKey": 3
+    },
+    {
+      "_id": "req_ws_send_a",
+      "_type": "request",
+      "parentId": "fld_ws_trigger",
+      "name": "Send message as A (participant)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/conversations/{{ _.conversation_id }}/messages",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"body\": \"oi via websocket\"\n}"
+      },
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Authorization", "value": "Bearer {{ _.token_a }}" }
+      ],
+      "description": "Expect 201. If B's WebSocket connection (folder 03) is open, this message should arrive there live.",
+      "metaSortKey": 0
+    }
+  ]
+}

@@ -11,22 +11,24 @@ from app.models.user import User
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
 
+async def decode_user_from_token(token: str, db: AsyncSession) -> User | None:
+    try:
+        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+    except JWTError:
+        return None
+
+    user_id = payload.get("sub")
+    if user_id is None:
+        return None
+
+    return await db.scalar(select(User).where(User.id == user_id))
+
+
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    credentials_error = HTTPException(status_code=401, detail="invalid or missing token")
-    try:
-        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
-    except JWTError:
-        raise credentials_error
-
-    user_id = payload.get("sub")
-    if user_id is None:
-        raise credentials_error
-
-    user = await db.scalar(select(User).where(User.id == user_id))
+    user = await decode_user_from_token(token, db)
     if user is None:
-        raise credentials_error
-
+        raise HTTPException(status_code=401, detail="invalid or missing token")
     return user

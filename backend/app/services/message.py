@@ -7,13 +7,14 @@ from app.models.conversation import ConversationParticipant
 from app.models.message import Message
 from app.models.user import User
 from app.schemas.message import MessageCreate
+from app.services.realtime import publish_message
 
 
 class ConversationNotFoundError(Exception):
     pass
 
 
-async def _assert_participant(
+async def assert_participant(
     db: AsyncSession, conversation_id: uuid.UUID, user_id: uuid.UUID
 ) -> None:
     participant = await db.scalar(
@@ -29,7 +30,7 @@ async def _assert_participant(
 async def send_message(
     db: AsyncSession, current_user: User, conversation_id: uuid.UUID, data: MessageCreate
 ) -> Message:
-    await _assert_participant(db, conversation_id, current_user.id)
+    await assert_participant(db, conversation_id, current_user.id)
 
     message = Message(
         conversation_id=conversation_id,
@@ -40,13 +41,14 @@ async def send_message(
     db.add(message)
     await db.commit()
     await db.refresh(message)
+    await publish_message(message)
     return message
 
 
 async def list_messages(
     db: AsyncSession, current_user: User, conversation_id: uuid.UUID
 ) -> list[Message]:
-    await _assert_participant(db, conversation_id, current_user.id)
+    await assert_participant(db, conversation_id, current_user.id)
 
     result = await db.scalars(
         select(Message)
