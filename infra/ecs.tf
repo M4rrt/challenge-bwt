@@ -106,6 +106,10 @@ resource "aws_ecs_task_definition" "backend" {
         protocol      = "tcp"
       }]
 
+      environment = [
+        { name = "FRONTEND_ORIGIN", value = var.frontend_origin },
+      ]
+
       secrets = [
         { name = "DATABASE_URL", valueFrom = aws_ssm_parameter.database_url.arn },
         { name = "REDIS_URL", valueFrom = aws_ssm_parameter.redis_url.arn },

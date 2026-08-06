@@ -12,10 +12,9 @@ See `docs/decisions.md` in the repo root for the reasoning behind these choices.
 
 ## Running locally
 
-```bash
-npm install
-npm run dev
-```
+1. Copy the env file and adjust if needed: `cp .env.example .env`
+2. Install dependencies: `npm install`
+3. Run the dev server: `npm run dev`
 
 The dev server runs at `http://localhost:5173`.
 
@@ -26,3 +25,11 @@ npm run build
 ```
 
 Type-checks with `tsc -b` and outputs a production bundle to `dist/`.
+
+## Tests
+
+```bash
+npm run test
+```
+
+Runs the Vitest + React Testing Library suite.

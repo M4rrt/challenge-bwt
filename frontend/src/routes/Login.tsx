@@ -2,7 +2,7 @@ import type { FormEvent } from 'react'
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { login as loginRequest } from '../lib/api'
+import { ApiError, login as loginRequest } from '../lib/api'
 import { useAuth } from '../lib/auth/AuthContext'
 
 function Login() {
@@ -49,7 +49,13 @@ function Login() {
         <button type="submit" disabled={mutation.isPending}>
           Entrar
         </button>
-        {mutation.isError && <p role="alert">Credenciais inválidas</p>}
+        {mutation.isError && (
+          <p role="alert">
+            {mutation.error instanceof ApiError && mutation.error.status === 401
+              ? 'Credenciais inválidas'
+              : 'Não foi possível conectar ao servidor'}
+          </p>
+        )}
       </form>
       <p>
         Não tem conta? <Link to="/register">Registrar</Link>

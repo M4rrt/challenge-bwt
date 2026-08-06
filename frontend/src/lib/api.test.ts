@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, login, register } from './api'
+import { ApiError, apiFetch, login, register } from './api'
 
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn())
@@ -54,5 +54,20 @@ describe('register', () => {
       }),
     )
     expect(result).toEqual({ id: 'user-1', email: 'ana@example.com' })
+  })
+})
+
+describe('apiFetch', () => {
+  it('attaches an Authorization header when a token is passed', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }))
+
+    await apiFetch('/some/path', {}, 'token-123')
+
+    expect(fetch).toHaveBeenCalledWith(
+      'http://localhost:8000/some/path',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer token-123' }),
+      }),
+    )
   })
 })

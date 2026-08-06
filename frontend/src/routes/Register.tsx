@@ -2,7 +2,7 @@ import type { FormEvent } from 'react'
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { register as registerRequest } from '../lib/api'
+import { ApiError, register as registerRequest } from '../lib/api'
 
 function Register() {
   const [email, setEmail] = useState('')
@@ -46,7 +46,15 @@ function Register() {
         <button type="submit" disabled={mutation.isPending}>
           Criar conta
         </button>
-        {mutation.isError && <p role="alert">Não foi possível criar a conta</p>}
+        {mutation.isError && (
+          <p role="alert">
+            {mutation.error instanceof ApiError && mutation.error.status === 409
+              ? 'Email já cadastrado'
+              : mutation.error instanceof ApiError && mutation.error.status === 422
+                ? 'Senha deve ter pelo menos 8 caracteres, com maiúscula, minúscula e um número ou símbolo'
+                : 'Não foi possível conectar ao servidor'}
+          </p>
+        )}
       </form>
       <p>
         Já tem conta? <Link to="/login">Entrar</Link>

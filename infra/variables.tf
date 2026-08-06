@@ -117,3 +117,9 @@ variable "redis_engine_version" {
   type        = string
   default     = "7.0"
 }
+
+variable "frontend_origin" {
+  description = "Allowed CORS origin for the frontend, passed to the backend as FRONTEND_ORIGIN."
+  type        = string
+  default     = "http://localhost:5173"
+}
