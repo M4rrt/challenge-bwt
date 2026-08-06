@@ -11,7 +11,7 @@ from app.services.message import ConversationNotFoundError, list_messages, send_
 
 
 async def _create_user(db: AsyncSession, email: str) -> User:
-    user = User(email=email, hashed_password="hashed")
+    user = User(email=email, username=email.split("@")[0], hashed_password="hashed")
     db.add(user)
     await db.commit()
     await db.refresh(user)
@@ -75,8 +75,10 @@ async def test_non_participant_cannot_list_messages(db_session: AsyncSession):
 
 
 async def _register_and_login(client: AsyncClient, email: str) -> tuple[str, dict[str, str]]:
+    username = email.split("@")[0]
     register_response = await client.post(
-        "/auth/register", json={"email": email, "password": "Senha-Forte-123"}
+        "/auth/register",
+        json={"email": email, "username": username, "password": "Senha-Forte-123"},
     )
     user_id = register_response.json()["id"]
 

@@ -8,6 +8,7 @@ PASSWORD_MIN_LENGTH = 8
 
 class UserCreate(BaseModel):
     email: EmailStr
+    username: str
     password: str
 
     @field_validator("password")
@@ -34,6 +35,7 @@ class UserLogin(BaseModel):
 class UserRead(BaseModel):
     id: uuid.UUID
     email: str
+    username: str
 
     model_config = {"from_attributes": True}
 
@@ -41,3 +43,10 @@ class UserRead(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class UserSummary(BaseModel):
+    id: uuid.UUID
+    username: str
+
+    model_config = {"from_attributes": True}

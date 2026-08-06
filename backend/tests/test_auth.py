@@ -10,25 +10,49 @@ from app.services.auth import hash_password
 async def test_register_creates_user(client: AsyncClient):
     response = await client.post(
         "/auth/register",
-        json={"email": "ana@example.com", "password": "Senha-Forte-123"},
+        json={"email": "ana@example.com", "username": "ana", "password": "Senha-Forte-123"},
     )
 
     assert response.status_code == 201
     body = response.json()
     assert body["email"] == "ana@example.com"
+    assert body["username"] == "ana"
     assert "password" not in body
     assert "id" in body
+
+
+async def test_register_requires_username(client: AsyncClient):
+    response = await client.post(
+        "/auth/register",
+        json={"email": "sem-username@example.com", "password": "Senha-Forte-123"},
+    )
+
+    assert response.status_code == 422
 
 
 async def test_register_rejects_duplicate_email(client: AsyncClient):
     await client.post(
         "/auth/register",
-        json={"email": "dup@example.com", "password": "Senha-Forte-123"},
+        json={"email": "dup@example.com", "username": "dup1", "password": "Senha-Forte-123"},
     )
 
     response = await client.post(
         "/auth/register",
-        json={"email": "dup@example.com", "password": "Outra-Senha-456"},
+        json={"email": "dup@example.com", "username": "dup2", "password": "Outra-Senha-456"},
+    )
+
+    assert response.status_code == 409
+
+
+async def test_register_rejects_duplicate_username(client: AsyncClient):
+    await client.post(
+        "/auth/register",
+        json={"email": "dupuser1@example.com", "username": "dupuser", "password": "Senha-Forte-123"},
+    )
+
+    response = await client.post(
+        "/auth/register",
+        json={"email": "dupuser2@example.com", "username": "dupuser", "password": "Outra-Senha-456"},
     )
 
     assert response.status_code == 409
@@ -37,7 +61,7 @@ async def test_register_rejects_duplicate_email(client: AsyncClient):
 async def test_login_issues_valid_jwt(client: AsyncClient):
     register_response = await client.post(
         "/auth/register",
-        json={"email": "login@example.com", "password": "Senha-Forte-123"},
+        json={"email": "login@example.com", "username": "login", "password": "Senha-Forte-123"},
     )
     user_id = register_response.json()["id"]
 
@@ -69,7 +93,7 @@ async def test_me_rejects_invalid_token(client: AsyncClient):
 async def test_register_rejects_invalid_email(client: AsyncClient):
     response = await client.post(
         "/auth/register",
-        json={"email": "not-an-email", "password": "Senha-Forte-123"},
+        json={"email": "not-an-email", "username": "invalido", "password": "Senha-Forte-123"},
     )
 
     assert response.status_code == 422
@@ -78,7 +102,7 @@ async def test_register_rejects_invalid_email(client: AsyncClient):
 async def test_register_rejects_weak_password(client: AsyncClient):
     response = await client.post(
         "/auth/register",
-        json={"email": "fraca@example.com", "password": "senha-fraca"},
+        json={"email": "fraca@example.com", "username": "fraca", "password": "senha-fraca"},
     )
 
     assert response.status_code == 422
@@ -96,7 +120,9 @@ async def test_login_rejects_invalid_email(client: AsyncClient):
 async def test_login_accepts_valid_email_with_legacy_weak_password(
     client: AsyncClient, db_session: AsyncSession
 ):
-    legacy_user = User(email="legado@example.com", hashed_password=hash_password("fraca"))
+    legacy_user = User(
+        email="legado@example.com", username="legado", hashed_password=hash_password("fraca")
+    )
     db_session.add(legacy_user)
     await db_session.commit()
 

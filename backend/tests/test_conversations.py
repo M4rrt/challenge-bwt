@@ -2,8 +2,10 @@ from httpx import AsyncClient
 
 
 async def _register_and_login(client: AsyncClient, email: str) -> tuple[str, dict[str, str]]:
+    username = email.split("@")[0]
     register_response = await client.post(
-        "/auth/register", json={"email": email, "password": "Senha-Forte-123"}
+        "/auth/register",
+        json={"email": email, "username": username, "password": "Senha-Forte-123"},
     )
     user_id = register_response.json()["id"]
 

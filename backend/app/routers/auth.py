@@ -8,6 +8,7 @@ from app.schemas.user import Token, UserCreate, UserLogin, UserRead
 from app.services.auth import (
     EmailAlreadyRegisteredError,
     InvalidCredentialsError,
+    UsernameAlreadyRegisteredError,
     login_user,
     register_user,
 )
@@ -21,6 +22,8 @@ async def register(data: UserCreate, db: AsyncSession = Depends(get_db)) -> User
         user = await register_user(db, data)
     except EmailAlreadyRegisteredError:
         raise HTTPException(status_code=409, detail="email already registered")
+    except UsernameAlreadyRegisteredError:
+        raise HTTPException(status_code=409, detail="username already registered")
     return UserRead.model_validate(user)
 
 

@@ -6,8 +6,12 @@
 
 **Status:** done
 
-- [x] `User` model (email, hashed password) + Alembic migration
+- [x] `User` model (email, username, hashed password) + Alembic migration
 - [x] `POST /auth/register` — creates a user, bcrypt-hashed password
 - [x] `POST /auth/login` — verifies credentials, issues a JWT
 - [x] `get_current_user` dependency — rejects missing/invalid tokens
 - [x] Tests: register succeeds, duplicate email rejected, login issues valid JWT, protected route rejects missing/invalid token
+
+## Comments
+
+`username` (required, unique) added to the `User` model and `POST /auth/register` by ticket 15, to back the participant picker in ticket 09.

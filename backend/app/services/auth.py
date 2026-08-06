@@ -14,6 +14,10 @@ class EmailAlreadyRegisteredError(Exception):
     pass
 
 
+class UsernameAlreadyRegisteredError(Exception):
+    pass
+
+
 class InvalidCredentialsError(Exception):
     pass
 
@@ -33,11 +37,17 @@ def create_access_token(user_id: str) -> str:
 
 
 async def register_user(db: AsyncSession, data: UserCreate) -> User:
-    existing = await db.scalar(select(User).where(User.email == data.email))
-    if existing is not None:
+    existing_email = await db.scalar(select(User).where(User.email == data.email))
+    if existing_email is not None:
         raise EmailAlreadyRegisteredError(data.email)
 
-    user = User(email=data.email, hashed_password=hash_password(data.password))
+    existing_username = await db.scalar(select(User).where(User.username == data.username))
+    if existing_username is not None:
+        raise UsernameAlreadyRegisteredError(data.username)
+
+    user = User(
+        email=data.email, username=data.username, hashed_password=hash_password(data.password)
+    )
     db.add(user)
     await db.commit()
     await db.refresh(user)
