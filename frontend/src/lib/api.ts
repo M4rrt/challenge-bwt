@@ -62,3 +62,47 @@ export function register(
     body: JSON.stringify({ email, username, password }),
   })
 }
+
+export interface CurrentUser {
+  id: string
+  email: string
+  username: string
+}
+
+export interface UserSummary {
+  id: string
+  username: string
+}
+
+export interface Conversation {
+  id: string
+  name: string | null
+  participant_user_ids: string[]
+}
+
+export function getMe(token: string): Promise<CurrentUser> {
+  return apiFetch<CurrentUser>('/auth/me', {}, token)
+}
+
+export function listUsers(token: string): Promise<UserSummary[]> {
+  return apiFetch<UserSummary[]>('/users', {}, token)
+}
+
+export function listConversations(token: string): Promise<Conversation[]> {
+  return apiFetch<Conversation[]>('/conversations', {}, token)
+}
+
+export function createConversation(
+  participantUserIds: string[],
+  name: string | undefined,
+  token: string,
+): Promise<Conversation> {
+  return apiFetch<Conversation>(
+    '/conversations',
+    {
+      method: 'POST',
+      body: JSON.stringify({ participant_user_ids: participantUserIds, name }),
+    },
+    token,
+  )
+}
