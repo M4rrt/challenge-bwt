@@ -28,4 +28,6 @@ Implemented via subagent-driven development, 7 tasks + a final-review fix pass, 
 
 End-to-end flow (register → login → `/conversas` → reload → logout) verified manually in a browser by the user against the real backend+frontend dev servers.
 
-Known follow-up debt (Minor, deliberately not fixed in this ticket): no link to `/login` from the Home placeholder; `api.test.ts` doesn't assert the *absence* of the `Authorization` header when no token is passed; the password-policy error text in `Register.tsx` is a hand-copied duplicate of the backend validator's message (no shared source of truth); 422 on register is treated as "weak password" but would also fire on a malformed email.
+Known follow-up debt (Minor, deliberately not fixed in this ticket): `api.test.ts` doesn't assert the *absence* of the `Authorization` header when no token is passed; the password-policy error text in `Register.tsx` is a hand-copied duplicate of the backend validator's message (no shared source of truth); 422 on register is treated as "weak password" but would also fire on a malformed email.
+
+(Home → `/login` link added afterward, commit `6493a80`.)
