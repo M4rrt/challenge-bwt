@@ -1,0 +1,286 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-08-05T00:00:00.000Z",
+  "__export_source": "manual:chat-app-ticket-04",
+  "resources": [
+    {
+      "_id": "wrk_chatapp",
+      "_type": "workspace",
+      "name": "Chat App — Ticket 04 (Conversas)",
+      "description": "Auth (ticket 03) + Conversations (ticket 04) manual test flow.",
+      "scope": "collection"
+    },
+    {
+      "_id": "env_base",
+      "_type": "environment",
+      "parentId": "wrk_chatapp",
+      "name": "Base Environment",
+      "data": {
+        "base_url": "http://localhost:8000",
+        "token_a": "",
+        "token_b": "",
+        "token_c": "",
+        "token_d": "",
+        "user_a_id": "",
+        "user_b_id": "",
+        "user_c_id": "",
+        "user_d_id": ""
+      },
+      "isPrivate": false,
+      "metaSortKey": 0
+    },
+    {
+      "_id": "fld_auth",
+      "_type": "request_group",
+      "parentId": "wrk_chatapp",
+      "name": "01 - Auth (register + login 4 users)",
+      "description": "Run in order. After each register, copy the response `id` into the matching user_x_id env var. After each login, copy `access_token` into the matching token_x env var. User D never gets added to a conversation — it exists to prove isolation.",
+      "metaSortKey": 0
+    },
+    {
+      "_id": "req_register_a",
+      "_type": "request",
+      "parentId": "fld_auth",
+      "name": "Register User A (ana)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/register",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"ana@example.com\",\n  \"password\": \"senha-forte-123\"\n}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "description": "Copy response `id` -> env `user_a_id`.",
+      "metaSortKey": 0
+    },
+    {
+      "_id": "req_register_b",
+      "_type": "request",
+      "parentId": "fld_auth",
+      "name": "Register User B (beto)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/register",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"beto@example.com\",\n  \"password\": \"senha-forte-123\"\n}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "description": "Copy response `id` -> env `user_b_id`.",
+      "metaSortKey": 1
+    },
+    {
+      "_id": "req_register_c",
+      "_type": "request",
+      "parentId": "fld_auth",
+      "name": "Register User C (carla)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/register",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"carla@example.com\",\n  \"password\": \"senha-forte-123\"\n}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "description": "Copy response `id` -> env `user_c_id`.",
+      "metaSortKey": 2
+    },
+    {
+      "_id": "req_register_d",
+      "_type": "request",
+      "parentId": "fld_auth",
+      "name": "Register User D (davi, no conversations)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/register",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"davi@example.com\",\n  \"password\": \"senha-forte-123\"\n}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "description": "Copy response `id` -> env `user_d_id`. This user is never added to any conversation.",
+      "metaSortKey": 3
+    },
+    {
+      "_id": "req_login_a",
+      "_type": "request",
+      "parentId": "fld_auth",
+      "name": "Login User A",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/login",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"ana@example.com\",\n  \"password\": \"senha-forte-123\"\n}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "description": "Copy response `access_token` -> env `token_a`.",
+      "metaSortKey": 4
+    },
+    {
+      "_id": "req_login_b",
+      "_type": "request",
+      "parentId": "fld_auth",
+      "name": "Login User B",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/login",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"beto@example.com\",\n  \"password\": \"senha-forte-123\"\n}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "description": "Copy response `access_token` -> env `token_b`.",
+      "metaSortKey": 5
+    },
+    {
+      "_id": "req_login_c",
+      "_type": "request",
+      "parentId": "fld_auth",
+      "name": "Login User C",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/login",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"carla@example.com\",\n  \"password\": \"senha-forte-123\"\n}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "description": "Copy response `access_token` -> env `token_c`.",
+      "metaSortKey": 6
+    },
+    {
+      "_id": "req_login_d",
+      "_type": "request",
+      "parentId": "fld_auth",
+      "name": "Login User D",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/login",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"davi@example.com\",\n  \"password\": \"senha-forte-123\"\n}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "description": "Copy response `access_token` -> env `token_d`.",
+      "metaSortKey": 7
+    },
+    {
+      "_id": "req_me_a",
+      "_type": "request",
+      "parentId": "fld_auth",
+      "name": "Me (sanity check for token_a)",
+      "method": "GET",
+      "url": "{{ _.base_url }}/auth/me",
+      "headers": [{ "name": "Authorization", "value": "Bearer {{ _.token_a }}" }],
+      "description": "Should return User A's own profile. Note: Insomnia's OAuth2/'Authorize' UI won't work against this API since /auth/login expects JSON, not form-urlencoded — use this Bearer header pattern instead.",
+      "metaSortKey": 8
+    },
+    {
+      "_id": "fld_conversations",
+      "_type": "request_group",
+      "parentId": "wrk_chatapp",
+      "name": "02 - Conversations (ticket 04)",
+      "description": "Run after the Auth folder so token_x/user_x_id env vars are filled in.",
+      "metaSortKey": 1
+    },
+    {
+      "_id": "req_create_1to1",
+      "_type": "request",
+      "parentId": "fld_conversations",
+      "name": "Create 1:1 conversation (A -> B)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/conversations",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"participant_user_ids\": [\"{{ _.user_b_id }}\"]\n}"
+      },
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Authorization", "value": "Bearer {{ _.token_a }}" }
+      ],
+      "description": "Expect 201, name: null, participant_user_ids containing A and B.",
+      "metaSortKey": 0
+    },
+    {
+      "_id": "req_create_1to1_dup",
+      "_type": "request",
+      "parentId": "fld_conversations",
+      "name": "Create 1:1 again (idempotency check)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/conversations",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"participant_user_ids\": [\"{{ _.user_b_id }}\"]\n}"
+      },
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Authorization", "value": "Bearer {{ _.token_a }}" }
+      ],
+      "description": "Expect 201 with the SAME `id` as the previous request — proves idempotent creation (ADR-0002).",
+      "metaSortKey": 1
+    },
+    {
+      "_id": "req_create_group",
+      "_type": "request",
+      "parentId": "fld_conversations",
+      "name": "Create group conversation (A, B, C)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/conversations",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"participant_user_ids\": [\"{{ _.user_b_id }}\", \"{{ _.user_c_id }}\"],\n  \"name\": \"Trio\"\n}"
+      },
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Authorization", "value": "Bearer {{ _.token_a }}" }
+      ],
+      "description": "Expect 201, name: 'Trio', participant_user_ids containing A, B and C.",
+      "metaSortKey": 2
+    },
+    {
+      "_id": "req_create_group_no_name",
+      "_type": "request",
+      "parentId": "fld_conversations",
+      "name": "Create group WITHOUT name (expect 422)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/conversations",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"participant_user_ids\": [\"{{ _.user_b_id }}\", \"{{ _.user_c_id }}\"]\n}"
+      },
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Authorization", "value": "Bearer {{ _.token_a }}" }
+      ],
+      "description": "3+ participants with no name must be rejected. Expect 422.",
+      "metaSortKey": 3
+    },
+    {
+      "_id": "req_list_a",
+      "_type": "request",
+      "parentId": "fld_conversations",
+      "name": "List conversations as A",
+      "method": "GET",
+      "url": "{{ _.base_url }}/conversations",
+      "headers": [{ "name": "Authorization", "value": "Bearer {{ _.token_a }}" }],
+      "description": "Expect the 1:1 (A,B) and the group (A,B,C) — 2 conversations.",
+      "metaSortKey": 4
+    },
+    {
+      "_id": "req_list_c",
+      "_type": "request",
+      "parentId": "fld_conversations",
+      "name": "List conversations as C",
+      "method": "GET",
+      "url": "{{ _.base_url }}/conversations",
+      "headers": [{ "name": "Authorization", "value": "Bearer {{ _.token_c }}" }],
+      "description": "Expect only the group conversation (C is not part of the A/B 1:1) — 1 conversation.",
+      "metaSortKey": 5
+    },
+    {
+      "_id": "req_list_d",
+      "_type": "request",
+      "parentId": "fld_conversations",
+      "name": "List conversations as D (isolation check)",
+      "method": "GET",
+      "url": "{{ _.base_url }}/conversations",
+      "headers": [{ "name": "Authorization", "value": "Bearer {{ _.token_d }}" }],
+      "description": "D was never added to any conversation. Expect an empty array `[]` — proves isolation.",
+      "metaSortKey": 6
+    }
+  ]
+}
