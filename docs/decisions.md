@@ -5,6 +5,7 @@ Running log of scope deferrals and "what I'd do with more time" notes, captured 
 ## Deferred
 
 - **No offline/unread delivery tracking.** Messages persist to Postgres and broadcast over WebSocket to currently-connected participants. A participant who wasn't connected when a message was sent fetches the backlog via REST (`GET /conversations/{id}/messages`) on reconnect — there's no read-receipt or unread-count state. Read receipts are a genuinely separate feature (own state machine, UI, edge cases) that isn't in the mandatory scope or the chosen extras (Auth, Tests). First thing to add with more time.
+- **Message ordering has no tiebreaker beyond `created_at`.** `list_messages` (`app/services/message.py`) sorts solely by `Message.created_at`; two messages committed within the same timestamp tick would have undefined relative order. Each `send_message` call does its own sequential `await db.commit()`, so in practice this hasn't been observed, and the ticket 05 spec doesn't call for a tiebreaker. Flagged in code review as a soft spot — the fix would be sorting by `(created_at, id)` or adding a monotonic sequence column, worth doing before this sees concurrent/high-throughput writes.
 
 ## Frontend tooling
 
