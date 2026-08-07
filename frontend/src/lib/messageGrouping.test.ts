@@ -67,6 +67,29 @@ describe('groupMessages', () => {
     expect(groups[0].displayName).toBe('Bot')
   })
 
+  it('starts a new group when sender_id is null but source_label differs', () => {
+    const messages = [
+      makeMessage({
+        id: 'msg-1',
+        sender_id: null,
+        sender_type: 'external',
+        source_label: 'Insomnia Test',
+      }),
+      makeMessage({
+        id: 'msg-2',
+        sender_id: null,
+        sender_type: 'external',
+        source_label: 'Shipping Bot',
+      }),
+    ]
+
+    const groups = groupMessages(messages, usernameById)
+
+    expect(groups).toHaveLength(2)
+    expect(groups[0].displayName).toBe('Insomnia Test')
+    expect(groups[1].displayName).toBe('Shipping Bot')
+  })
+
   it('takes the group timestamp from the first message in the group', () => {
     const messages = [
       makeMessage({ id: 'msg-1', sender_id: 'user-1', created_at: '2026-08-06T12:00:00Z' }),

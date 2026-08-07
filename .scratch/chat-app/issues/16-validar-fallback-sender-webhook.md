@@ -10,3 +10,4 @@
 - [ ] Send a message through the real webhook endpoint and confirm it renders in `/conversas/:id` with the expected sender label (not the generic "Bot" fallback, unless `source_label` is genuinely absent)
 - [ ] If the shapes don't match (e.g. `source_label`'s format isn't a human-readable name), fix either the webhook payload/persistence or the frontend fallback so they agree
 - [ ] Tests: extend `messageGrouping.test.ts` and/or `Conversa.test.tsx` if the real shape reveals a case not currently covered
+- [ ] UI refactor: differentiate message colors in the chat screen by sender kind — current user, other user, and webhook/external sender should each be visually distinct (`frontend/src/routes/Conversa.tsx`)
