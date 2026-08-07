@@ -5,9 +5,12 @@ import {
   createConversation,
   getMe,
   listConversations,
+  listMessages,
   listUsers,
   login,
   register,
+  sendMessage,
+  toWsUrl,
 } from './api'
 
 beforeEach(() => {
@@ -153,6 +156,96 @@ describe('createConversation', () => {
       name: 'Trio',
       participant_user_ids: ['user-1', 'user-2', 'user-3'],
     })
+  })
+})
+
+describe('listMessages', () => {
+  it('fetches a conversation message backlog with the given token', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify([
+          {
+            id: 'msg-1',
+            conversation_id: 'conv-1',
+            sender_id: 'user-1',
+            sender_type: 'user',
+            source_label: null,
+            body: 'oi',
+            created_at: '2026-08-06T12:00:00Z',
+          },
+        ]),
+        { status: 200 },
+      ),
+    )
+
+    const result = await listMessages('conv-1', 'token-123')
+
+    expect(fetch).toHaveBeenCalledWith(
+      'http://localhost:8000/conversations/conv-1/messages',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer token-123' }),
+      }),
+    )
+    expect(result).toEqual([
+      {
+        id: 'msg-1',
+        conversation_id: 'conv-1',
+        sender_id: 'user-1',
+        sender_type: 'user',
+        source_label: null,
+        body: 'oi',
+        created_at: '2026-08-06T12:00:00Z',
+      },
+    ])
+  })
+})
+
+describe('sendMessage', () => {
+  it('posts a message body to a conversation with the given token', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: 'msg-1',
+          conversation_id: 'conv-1',
+          sender_id: 'user-1',
+          sender_type: 'user',
+          source_label: null,
+          body: 'oi',
+          created_at: '2026-08-06T12:00:00Z',
+        }),
+        { status: 201 },
+      ),
+    )
+
+    const result = await sendMessage('conv-1', 'oi', 'token-123')
+
+    expect(fetch).toHaveBeenCalledWith(
+      'http://localhost:8000/conversations/conv-1/messages',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ body: 'oi' }),
+        headers: expect.objectContaining({ Authorization: 'Bearer token-123' }),
+      }),
+    )
+    expect(result).toEqual({
+      id: 'msg-1',
+      conversation_id: 'conv-1',
+      sender_id: 'user-1',
+      sender_type: 'user',
+      source_label: null,
+      body: 'oi',
+      created_at: '2026-08-06T12:00:00Z',
+    })
+  })
+})
+
+describe('toWsUrl', () => {
+  it('swaps http for ws', () => {
+    expect(toWsUrl('http://localhost:8000')).toBe('ws://localhost:8000')
+  })
+
+  it('swaps https for wss', () => {
+    expect(toWsUrl('https://api.example.com')).toBe('wss://api.example.com')
   })
 })
 
