@@ -211,6 +211,27 @@
         }
       ],
       "metaSortKey": 4
+    },
+    {
+      "_id": "req_webhook_custom_utf8",
+      "_type": "request",
+      "parentId": "fld_webhook_tests",
+      "name": "6. Custom message (UTF-8 source_label) -> 201",
+      "description": "Ad-hoc manual test with a non-ASCII source_label (accented 'é' + trailing space), to confirm the signature check works over UTF-8-encoded bytes, not just ASCII. Expect: 201, response echoes the body/source_label verbatim, delivered live to any connected participant.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/webhook/messages",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\"conversation_id\": \"2811b4a5-60d9-4f81-b899-3e78012b29b9\", \"body\": \"Hello from Insomnia\", \"source_label\": \"Esse é um teste de webhook \"}"
+      },
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        {
+          "name": "X-Signature",
+          "value": "81a8c81311fd9a00a2f39bd4a29914d77293c698c15be12aa9d3034229d53177"
+        }
+      ],
+      "metaSortKey": 5
     }
   ]
 }
