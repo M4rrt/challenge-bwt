@@ -1,0 +1,216 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-08-07T00:00:00.000Z",
+  "__export_source": "manual:chat-app-ticket-07",
+  "resources": [
+    {
+      "_id": "wrk_chatapp_webhook",
+      "_type": "workspace",
+      "name": "Chat App — Ticket 07 (Webhook)",
+      "description": "External webhook message ingestion (ticket 07), HMAC-SHA256 signed. Unlike the other collections, the '03 - Webhook Tests' folder cannot use env-var templating for the request bodies: Insomnia can't compute an HMAC signature inline, so each signature is precomputed for the EXACT body text sitting next to it. If you edit a body, or the fixture conversation_id changes, you must recompute the signature by hand — see backend/README.md's Webhook section for the recipe (HMAC-SHA256 over the raw body bytes, keyed by WEBHOOK_HMAC_SECRET, hex-encoded).",
+      "scope": "collection"
+    },
+    {
+      "_id": "env_base_webhook",
+      "_type": "environment",
+      "parentId": "wrk_chatapp_webhook",
+      "name": "Base Environment",
+      "data": {
+        "base_url": "http://localhost:8000",
+        "token_a": "",
+        "user_a_id": "",
+        "user_b_id": "",
+        "conversation_id": ""
+      },
+      "isPrivate": false,
+      "metaSortKey": 0
+    },
+    {
+      "_id": "fld_webhook_auth",
+      "_type": "request_group",
+      "parentId": "wrk_chatapp_webhook",
+      "name": "01 - Auth (fixture users, reference only)",
+      "description": "These created the fixture conversation that '03 - Webhook Tests' is hardcoded against (conversation_id 2811b4a5-60d9-4f81-b899-3e78012b29b9, participants insomnia-a@example.com / insomnia-b@example.com). Already run once against the local DB — re-running Register will 409 (duplicate email) unless the DB was reset. Kept here so the fixture is reproducible from scratch if needed.",
+      "metaSortKey": 0
+    },
+    {
+      "_id": "req_webhook_register_a",
+      "_type": "request",
+      "parentId": "fld_webhook_auth",
+      "name": "Register User A (insomnia-a)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/register",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"insomnia-a@example.com\",\n  \"username\": \"insomnia-a\",\n  \"password\": \"Senha-Forte-123\"\n}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "description": "Copy response `id` -> env `user_a_id`.",
+      "metaSortKey": 0
+    },
+    {
+      "_id": "req_webhook_register_b",
+      "_type": "request",
+      "parentId": "fld_webhook_auth",
+      "name": "Register User B (insomnia-b)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/register",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"insomnia-b@example.com\",\n  \"username\": \"insomnia-b\",\n  \"password\": \"Senha-Forte-123\"\n}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "description": "Copy response `id` -> env `user_b_id`.",
+      "metaSortKey": 1
+    },
+    {
+      "_id": "req_webhook_login_a",
+      "_type": "request",
+      "parentId": "fld_webhook_auth",
+      "name": "Login User A",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/login",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"insomnia-a@example.com\",\n  \"password\": \"Senha-Forte-123\"\n}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "description": "Copy response `access_token` -> env `token_a`.",
+      "metaSortKey": 2
+    },
+    {
+      "_id": "fld_webhook_setup",
+      "_type": "request_group",
+      "parentId": "wrk_chatapp_webhook",
+      "name": "02 - Setup (create the fixture conversation)",
+      "description": "Also already run once. If you re-create it, the response `id` will be a NEW UUID — you must then recompute every signature in '03 - Webhook Tests' against that new conversation_id (they're hardcoded, not templated).",
+      "metaSortKey": 1
+    },
+    {
+      "_id": "req_webhook_create_conversation",
+      "_type": "request",
+      "parentId": "fld_webhook_setup",
+      "name": "Create 1:1 conversation (A -> B)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/conversations",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"participant_user_ids\": [\"{{ _.user_b_id }}\"]\n}"
+      },
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Authorization", "value": "Bearer {{ _.token_a }}" }
+      ],
+      "description": "Expect 201. Copy response `id` -> env `conversation_id` for reference. The fixture value baked into '03 - Webhook Tests' is 2811b4a5-60d9-4f81-b899-3e78012b29b9.",
+      "metaSortKey": 0
+    },
+    {
+      "_id": "fld_webhook_tests",
+      "_type": "request_group",
+      "parentId": "wrk_chatapp_webhook",
+      "name": "03 - Webhook Tests (ticket 07) — hardcoded bodies + signatures",
+      "description": "Every body+signature pair below is pinned to conversation_id 2811b4a5-60d9-4f81-b899-3e78012b29b9 and secret 'change-me' (backend/.env's WEBHOOK_HMAC_SECRET). Run '5. Unknown conversation_id' anytime (no fixture dependency); the other four require the fixture conversation from folders 01-02 to already exist in the DB.",
+      "metaSortKey": 2
+    },
+    {
+      "_id": "req_webhook_valid_signature",
+      "_type": "request",
+      "parentId": "fld_webhook_tests",
+      "name": "1. Valid signature -> 201 persisted + delivered",
+      "description": "Expect: 201, response echoes sender_id=null, sender_type=external, source_label=Insomnia Test.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/webhook/messages",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\"conversation_id\": \"2811b4a5-60d9-4f81-b899-3e78012b29b9\", \"body\": \"Hello from Insomnia\", \"source_label\": \"Insomnia Test\"}"
+      },
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        {
+          "name": "X-Signature",
+          "value": "a21bc99f97cc01196f482564d1a7c2ebd9fcb1e33897e2de2b506ed61c61e762"
+        }
+      ],
+      "metaSortKey": 0
+    },
+    {
+      "_id": "req_webhook_missing_signature",
+      "_type": "request",
+      "parentId": "fld_webhook_tests",
+      "name": "2. Missing X-Signature header -> 401",
+      "description": "No X-Signature header sent at all. Expect: 401, no message persisted.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/webhook/messages",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\"conversation_id\": \"2811b4a5-60d9-4f81-b899-3e78012b29b9\", \"body\": \"No signature header\"}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "metaSortKey": 1
+    },
+    {
+      "_id": "req_webhook_invalid_signature",
+      "_type": "request",
+      "parentId": "fld_webhook_tests",
+      "name": "3. Invalid X-Signature (garbage) -> 401",
+      "description": "X-Signature is 64 zero characters - well-formed hex but wrong. Expect: 401, no message persisted.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/webhook/messages",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\"conversation_id\": \"2811b4a5-60d9-4f81-b899-3e78012b29b9\", \"body\": \"Bad signature\"}"
+      },
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        {
+          "name": "X-Signature",
+          "value": "0000000000000000000000000000000000000000000000000000000000000"
+        }
+      ],
+      "metaSortKey": 2
+    },
+    {
+      "_id": "req_webhook_tampered_body",
+      "_type": "request",
+      "parentId": "fld_webhook_tests",
+      "name": "4. Tampered body -> 401",
+      "description": "X-Signature below is valid for body {\"conversation_id\": \"2811b4a5-60d9-4f81-b899-3e78012b29b9\", \"body\": \"original message\"} but the body actually sent says 'tampered message' instead. Expect: 401 — the signature no longer matches the bytes sent.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/webhook/messages",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\"conversation_id\": \"2811b4a5-60d9-4f81-b899-3e78012b29b9\", \"body\": \"tampered message\"}"
+      },
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        {
+          "name": "X-Signature",
+          "value": "7d90e95f2ee2e3c99f89693c0410d71262baa542f89639ba4041a0b41d369f09"
+        }
+      ],
+      "metaSortKey": 3
+    },
+    {
+      "_id": "req_webhook_unknown_conversation",
+      "_type": "request",
+      "parentId": "fld_webhook_tests",
+      "name": "5. Unknown conversation_id -> 404",
+      "description": "Valid signature, but conversation_id 00000000-0000-0000-0000-000000000000 doesn't exist. Expect: 404. No fixture dependency — works even without folders 01-02.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/webhook/messages",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\"conversation_id\": \"00000000-0000-0000-0000-000000000000\", \"body\": \"nobody home\"}"
+      },
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        {
+          "name": "X-Signature",
+          "value": "bb34d346b39a0f4d88ba41934b27481bf1bae92ba236550e69fb811bd7478ee0"
+        }
+      ],
+      "metaSortKey": 4
+    }
+  ]
+}

@@ -46,7 +46,7 @@
       "url": "{{ _.base_url }}/auth/register",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"email\": \"ana@example.com\",\n  \"password\": \"senha-forte-123\"\n}"
+        "text": "{\n  \"email\": \"ana@example.com\",\n  \"username\": \"ana\",\n  \"password\": \"Senha-Forte-123\"\n}"
       },
       "headers": [{ "name": "Content-Type", "value": "application/json" }],
       "description": "Copy response `id` -> env `user_a_id`.",
@@ -61,7 +61,7 @@
       "url": "{{ _.base_url }}/auth/register",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"email\": \"beto@example.com\",\n  \"password\": \"senha-forte-123\"\n}"
+        "text": "{\n  \"email\": \"beto@example.com\",\n  \"username\": \"beto\",\n  \"password\": \"Senha-Forte-123\"\n}"
       },
       "headers": [{ "name": "Content-Type", "value": "application/json" }],
       "description": "Copy response `id` -> env `user_b_id`.",
@@ -76,7 +76,7 @@
       "url": "{{ _.base_url }}/auth/register",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"email\": \"carla@example.com\",\n  \"password\": \"senha-forte-123\"\n}"
+        "text": "{\n  \"email\": \"carla@example.com\",\n  \"username\": \"carla\",\n  \"password\": \"Senha-Forte-123\"\n}"
       },
       "headers": [{ "name": "Content-Type", "value": "application/json" }],
       "description": "Copy response `id` -> env `user_c_id`. This user is never added to the conversation below.",
@@ -91,7 +91,7 @@
       "url": "{{ _.base_url }}/auth/login",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"email\": \"ana@example.com\",\n  \"password\": \"senha-forte-123\"\n}"
+        "text": "{\n  \"email\": \"ana@example.com\",\n  \"password\": \"Senha-Forte-123\"\n}"
       },
       "headers": [{ "name": "Content-Type", "value": "application/json" }],
       "description": "Copy response `access_token` -> env `token_a`.",
@@ -106,7 +106,7 @@
       "url": "{{ _.base_url }}/auth/login",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"email\": \"beto@example.com\",\n  \"password\": \"senha-forte-123\"\n}"
+        "text": "{\n  \"email\": \"beto@example.com\",\n  \"password\": \"Senha-Forte-123\"\n}"
       },
       "headers": [{ "name": "Content-Type", "value": "application/json" }],
       "description": "Copy response `access_token` -> env `token_b`.",
@@ -121,7 +121,7 @@
       "url": "{{ _.base_url }}/auth/login",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"email\": \"carla@example.com\",\n  \"password\": \"senha-forte-123\"\n}"
+        "text": "{\n  \"email\": \"carla@example.com\",\n  \"password\": \"Senha-Forte-123\"\n}"
       },
       "headers": [{ "name": "Content-Type", "value": "application/json" }],
       "description": "Copy response `access_token` -> env `token_c`.",

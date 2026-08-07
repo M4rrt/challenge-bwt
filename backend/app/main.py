@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.routers import auth, conversations, messages, users, websocket
+from app.routers import auth, conversations, messages, users, webhook, websocket
 from app.services.realtime import run_subscriber
 
 
@@ -33,6 +33,7 @@ app.include_router(auth.router)
 app.include_router(conversations.router)
 app.include_router(messages.router)
 app.include_router(users.router)
+app.include_router(webhook.router)
 app.include_router(websocket.router)
 
 

@@ -1,3 +1,6 @@
+import hashlib
+import hmac
+
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
@@ -22,6 +25,13 @@ async def decode_user_from_token(token: str, db: AsyncSession) -> User | None:
         return None
 
     return await db.scalar(select(User).where(User.id == user_id))
+
+
+def verify_webhook_signature(body: bytes, signature: str | None) -> bool:
+    if not signature:
+        return False
+    expected = hmac.new(settings.webhook_hmac_secret.encode(), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature)
 
 
 async def get_current_user(

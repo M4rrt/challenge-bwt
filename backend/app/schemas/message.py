@@ -8,6 +8,12 @@ class MessageCreate(BaseModel):
     body: str
 
 
+class WebhookMessageCreate(BaseModel):
+    conversation_id: uuid.UUID
+    body: str
+    source_label: str | None = None
+
+
 class MessageRead(BaseModel):
     id: uuid.UUID
     conversation_id: uuid.UUID

@@ -36,6 +36,36 @@ tests/
 6. Run the API: `uv run uvicorn app.main:app --reload`
 7. Health check: `curl http://localhost:8000/health`
 
+## Webhook
+
+`POST /webhook/messages` lets an external system deliver a message into an existing conversation, authenticated by a shared-secret HMAC signature instead of a JWT.
+
+**Request:**
+
+- Body (JSON): `{ "conversation_id": "<uuid>", "body": "<text>", "source_label": "<string, optional>" }` — `source_label` identifies the external sender in the UI (e.g. `"Shipping Bot"`); omit or send `null` for a generic fallback.
+- Header `X-Signature`: hex-encoded `HMAC-SHA256(WEBHOOK_HMAC_SECRET, raw_request_body_bytes)`.
+
+The signature must be computed over the **exact bytes** sent as the request body — re-serializing the JSON (different key order, whitespace) before signing will produce a signature that fails verification, since the server hashes the raw bytes it received rather than re-encoding the parsed payload.
+
+Example (Python):
+
+```python
+import hmac, hashlib, httpx
+
+body = b'{"conversation_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6", "body": "Your order shipped!", "source_label": "Shipping Bot"}'
+signature = hmac.new(settings.webhook_hmac_secret.encode(), body, hashlib.sha256).hexdigest()
+
+httpx.post(
+    "http://localhost:8000/webhook/messages",
+    content=body,
+    headers={"X-Signature": signature, "Content-Type": "application/json"},
+)
+```
+
+**Responses:** `401` on a missing/invalid signature (checked before any database access), `404` if `conversation_id` doesn't reference an existing conversation, `201` with the created message on success — delivered live to the conversation's connected participants via the same Redis/WebSocket path as a regular message.
+
+**Known gaps** (see `docs/decisions.md`): no replay protection (a captured valid request can be resent), and no scoped way for the external system to discover which `conversation_id` to use — it must already know the UUID out-of-band.
+
 ## Tests
 
 TDD, red-green-refactor per the repo `CLAUDE.md` — tests are written alongside each behavior, not after.
