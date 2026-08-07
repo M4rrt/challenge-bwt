@@ -134,4 +134,77 @@ describe('Conversa', () => {
 
     expect(await screen.findByText('oi beto')).toBeInTheDocument()
   })
+
+  it('marks message bubbles with the sender kind (me, other, external)', async () => {
+    vi.mocked(listMessages).mockResolvedValue([
+      {
+        id: 'msg-1',
+        conversation_id: 'conv-1',
+        sender_id: 'me-id',
+        sender_type: 'user',
+        source_label: null,
+        body: 'minha mensagem',
+        created_at: '2026-08-06T12:00:00Z',
+      },
+      {
+        id: 'msg-2',
+        conversation_id: 'conv-1',
+        sender_id: 'beto-id',
+        sender_type: 'user',
+        source_label: null,
+        body: 'mensagem do beto',
+        created_at: '2026-08-06T12:01:00Z',
+      },
+      {
+        id: 'msg-3',
+        conversation_id: 'conv-1',
+        sender_id: null,
+        sender_type: 'external',
+        source_label: 'Zapier',
+        body: 'mensagem do webhook',
+        created_at: '2026-08-06T12:02:00Z',
+      },
+    ])
+    renderConversa()
+
+    expect(await screen.findByText('minha mensagem')).toHaveAttribute(
+      'data-sender-kind',
+      'me',
+    )
+    expect(screen.getByText('mensagem do beto')).toHaveAttribute('data-sender-kind', 'other')
+    expect(screen.getByText('mensagem do webhook')).toHaveAttribute(
+      'data-sender-kind',
+      'external',
+    )
+  })
+
+  it('shows an info tooltip on external/webhook messages explaining the source, but not on others', async () => {
+    vi.mocked(listMessages).mockResolvedValue([
+      {
+        id: 'msg-1',
+        conversation_id: 'conv-1',
+        sender_id: 'me-id',
+        sender_type: 'user',
+        source_label: null,
+        body: 'minha mensagem',
+        created_at: '2026-08-06T12:00:00Z',
+      },
+      {
+        id: 'msg-2',
+        conversation_id: 'conv-1',
+        sender_id: null,
+        sender_type: 'external',
+        source_label: 'Zapier',
+        body: 'mensagem do webhook',
+        created_at: '2026-08-06T12:02:00Z',
+      },
+    ])
+    renderConversa()
+
+    await screen.findByText('minha mensagem')
+    expect(
+      screen.getByLabelText('Essa mensagem veio de um serviço externo'),
+    ).toBeInTheDocument()
+    expect(screen.getAllByLabelText('Essa mensagem veio de um serviço externo')).toHaveLength(1)
+  })
 })

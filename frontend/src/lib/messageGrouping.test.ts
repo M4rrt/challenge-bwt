@@ -90,6 +90,32 @@ describe('groupMessages', () => {
     expect(groups[1].displayName).toBe('Shipping Bot')
   })
 
+  it('marks a group as "me" when the message sender is the current user', () => {
+    const messages = [makeMessage({ id: 'msg-1', sender_id: 'user-1' })]
+
+    const groups = groupMessages(messages, usernameById, 'user-1')
+
+    expect(groups[0].senderKind).toBe('me')
+  })
+
+  it('marks a group as "other" when the message sender is a different user', () => {
+    const messages = [makeMessage({ id: 'msg-1', sender_id: 'user-2' })]
+
+    const groups = groupMessages(messages, usernameById, 'user-1')
+
+    expect(groups[0].senderKind).toBe('other')
+  })
+
+  it('marks a group as "external" when the message has no sender_id (webhook)', () => {
+    const messages = [
+      makeMessage({ id: 'msg-1', sender_id: null, sender_type: 'external', source_label: 'Zapier' }),
+    ]
+
+    const groups = groupMessages(messages, usernameById, 'user-1')
+
+    expect(groups[0].senderKind).toBe('external')
+  })
+
   it('takes the group timestamp from the first message in the group', () => {
     const messages = [
       makeMessage({ id: 'msg-1', sender_id: 'user-1', created_at: '2026-08-06T12:00:00Z' }),
