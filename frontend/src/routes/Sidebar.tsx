@@ -1,7 +1,17 @@
 import type { FormEvent } from 'react'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
+import Checkbox from '@mui/material/Checkbox'
+import FormControlLabel from '@mui/material/FormControlLabel'
+import List from '@mui/material/List'
+import ListItemButton from '@mui/material/ListItemButton'
+import ListItemText from '@mui/material/ListItemText'
+import Paper from '@mui/material/Paper'
+import TextField from '@mui/material/TextField'
+import Typography from '@mui/material/Typography'
 import {
   type Conversation,
   createConversation,
@@ -23,10 +33,11 @@ function conversationLabel(
   return (otherId && usernameById.get(otherId)) ?? 'Conversa'
 }
 
-function Conversas() {
+function Sidebar() {
   const auth = useAuth()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { conversationId } = useParams<{ conversationId: string }>()
   const token = auth.token ?? undefined
 
   const [isFormOpen, setIsFormOpen] = useState(false)
@@ -76,56 +87,73 @@ function Conversas() {
   const isGroup = selectedUserIds.length > 1
 
   return (
-    <main>
-      <h1>Conversas</h1>
-      <ul>
+    <Paper
+      elevation={0}
+      sx={{
+        width: 320,
+        display: 'flex',
+        flexDirection: 'column',
+        p: 2,
+        gap: 2,
+        overflowY: 'auto',
+      }}
+    >
+      <Typography variant="h6">Conversas</Typography>
+      <List sx={{ flex: isFormOpen ? 'initial' : 1 }}>
         {conversationsQuery.data?.map((conversation) => (
-          <li key={conversation.id}>
-            {conversationLabel(conversation, meQuery.data?.id, usernameById)}
-          </li>
+          <ListItemButton
+            key={conversation.id}
+            component={Link}
+            to={`/conversas/${conversation.id}`}
+            selected={conversation.id === conversationId}
+          >
+            <ListItemText primary={conversationLabel(conversation, meQuery.data?.id, usernameById)} />
+          </ListItemButton>
         ))}
-      </ul>
+      </List>
       {!isFormOpen && (
-        <button type="button" onClick={() => setIsFormOpen(true)}>
+        <Button variant="contained" onClick={() => setIsFormOpen(true)}>
           Nova conversa
-        </button>
+        </Button>
       )}
       {isFormOpen && (
-        <form onSubmit={handleSubmit}>
-          <fieldset>
-            <legend>Participantes</legend>
-            {otherUsers.map((user) => (
-              <label key={user.id}>
-                <input
-                  type="checkbox"
+        <Box component="form" onSubmit={handleSubmit} sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <Typography variant="subtitle2" component="legend">
+            Participantes
+          </Typography>
+          {otherUsers.map((user) => (
+            <FormControlLabel
+              key={user.id}
+              control={
+                <Checkbox
                   checked={selectedUserIds.includes(user.id)}
                   onChange={() => toggleParticipant(user.id)}
                 />
-                {user.username}
-              </label>
-            ))}
-          </fieldset>
+              }
+              label={user.username}
+            />
+          ))}
           {isGroup && (
-            <label>
-              Nome do grupo
-              <input
-                type="text"
-                value={groupName}
-                onChange={(event) => setGroupName(event.target.value)}
-                required
-              />
-            </label>
+            <TextField
+              label="Nome do grupo"
+              value={groupName}
+              onChange={(event) => setGroupName(event.target.value)}
+              required
+              size="small"
+            />
           )}
-          <button type="submit" disabled={selectedUserIds.length === 0 || createMutation.isPending}>
+          <Button
+            type="submit"
+            variant="contained"
+            disabled={selectedUserIds.length === 0 || createMutation.isPending}
+          >
             Criar
-          </button>
-        </form>
+          </Button>
+        </Box>
       )}
-      <button type="button" onClick={handleLogout}>
-        Sair
-      </button>
-    </main>
+      <Button onClick={handleLogout}>Sair</Button>
+    </Paper>
   )
 }
 
-export default Conversas
+export default Sidebar

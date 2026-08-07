@@ -1,6 +1,10 @@
 const DEFAULT_API_URL = 'http://localhost:8000'
 
-const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? DEFAULT_API_URL
+export const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? DEFAULT_API_URL
+
+export function toWsUrl(apiUrl: string): string {
+  return apiUrl.replace(/^http/, 'ws')
+}
 
 export class ApiError extends Error {
   readonly status: number
@@ -103,6 +107,32 @@ export function createConversation(
       method: 'POST',
       body: JSON.stringify({ participant_user_ids: participantUserIds, name }),
     },
+    token,
+  )
+}
+
+export interface Message {
+  id: string
+  conversation_id: string
+  sender_id: string | null
+  sender_type: string
+  source_label: string | null
+  body: string
+  created_at: string
+}
+
+export function listMessages(conversationId: string, token: string): Promise<Message[]> {
+  return apiFetch<Message[]>(`/conversations/${conversationId}/messages`, {}, token)
+}
+
+export function sendMessage(
+  conversationId: string,
+  body: string,
+  token: string,
+): Promise<Message> {
+  return apiFetch<Message>(
+    `/conversations/${conversationId}/messages`,
+    { method: 'POST', body: JSON.stringify({ body }) },
     token,
   )
 }

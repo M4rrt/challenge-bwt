@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from '../lib/auth/AuthContext'
 import { createConversation, getMe, listConversations, listUsers } from '../lib/api'
-import Conversas from './Conversas'
+import Sidebar from './Sidebar'
 
 vi.mock('../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api')
@@ -33,7 +33,7 @@ function renderConversas() {
       <AuthProvider>
         <MemoryRouter initialEntries={['/conversas']}>
           <Routes>
-            <Route path="/conversas" element={<Conversas />} />
+            <Route path="/conversas" element={<Sidebar />} />
             <Route path="/login" element={<div>Login page</div>} />
           </Routes>
         </MemoryRouter>
@@ -53,7 +53,7 @@ beforeEach(() => {
   vi.mocked(listUsers).mockResolvedValue(USERS)
 })
 
-describe('Conversas', () => {
+describe('Sidebar', () => {
   it("renders the user's conversations, resolving 1:1s to the other participant's username", async () => {
     vi.mocked(listConversations).mockResolvedValue([
       { id: 'conv-1', name: null, participant_user_ids: ['me-id', 'beto-id'] },
@@ -74,13 +74,13 @@ describe('Conversas', () => {
     await user.click(screen.getByRole('checkbox', { name: 'beto' }))
     await user.click(screen.getByRole('checkbox', { name: 'carla' }))
 
-    expect(screen.getByLabelText('Nome do grupo')).toBeInTheDocument()
+    expect(screen.getByLabelText(/Nome do grupo/)).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Criar' }))
 
     expect(createConversation).not.toHaveBeenCalled()
 
-    await user.type(screen.getByLabelText('Nome do grupo'), 'Trio')
+    await user.type(screen.getByLabelText(/Nome do grupo/), 'Trio')
     await user.click(screen.getByRole('button', { name: 'Criar' }))
 
     await waitFor(() =>
