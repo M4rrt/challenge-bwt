@@ -12,11 +12,12 @@ plain environment variable.
 ## Running against LocalStack
 
 Requires [LocalStack](https://docs.localstack.cloud/) running locally (the community/free tier is enough
-for everything except ElastiCache — see the known limitation below).
+to `apply` about half of this Terraform — see the known limitation below for exactly which resources).
 
 ```bash
-# start LocalStack
-docker run -d --name localstack -p 4566:4566 localstack/localstack
+# start LocalStack — pin to a known-working community tag; the `latest` tag now
+# requires a LOCALSTACK_AUTH_TOKEN just to boot, even for free-tier features
+docker run -d --name localstack -p 4566:4566 localstack/localstack:3.8
 
 # from infra/
 terraform init
@@ -35,10 +36,19 @@ terraform destroy
 
 ## Known limitation
 
-ElastiCache is a LocalStack Pro-tier service (see ADR-0003). On the free tier, `aws_elasticache_cluster`
-in `elasticache.tf` will fail on `terraform apply` even though it passes `terraform validate`/`plan`. Every
-other resource applies successfully. Local *application* testing uses the plain Redis container from
-`backend/docker-compose.yml` instead, independent of this Terraform.
+Confirmed by actually running `terraform apply` against LocalStack community edition 3.8.1 (ticket 11):
+several services used here are LocalStack Pro-tier only and fail with a 501 "not yet implemented or pro
+feature" error on `apply`, even though they pass `terraform validate`/`plan`:
+
+- **ECS** — `aws_ecs_cluster`, `aws_ecs_service` (`ecs.tf`)
+- **ECR** — `aws_ecr_repository` (`ecs.tf`)
+- **RDS** — `aws_db_subnet_group`, `aws_db_instance` (`rds.tf`)
+- **ElastiCache** — `aws_elasticache_cluster` (`elasticache.tf`, see ADR-0003)
+- **ELBv2** — `aws_lb`, `aws_lb_target_group` (`network.tf`)
+
+Only VPC/networking (subnets, route tables, security groups, IGW), IAM, CloudWatch Logs, and SSM
+Parameter Store apply successfully against the community tier. Local *application* testing uses the
+plain Postgres/Redis containers from `backend/docker-compose.yml` instead, independent of this Terraform.
 
 ## Container image
 
