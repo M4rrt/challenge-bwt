@@ -1,7 +1,7 @@
 import type { Message } from './api'
 
 export interface MessageGroup {
-  senderId: string | null
+  groupKey: string | null
   displayName: string
   timestamp: string
   messages: Message[]
@@ -12,6 +12,10 @@ function displayNameFor(message: Message, usernameById: Map<string, string>): st
     return usernameById.get(message.sender_id) ?? 'Usuário'
   }
   return message.source_label ?? 'Bot'
+}
+
+function groupKeyFor(message: Message): string | null {
+  return message.sender_id ?? message.source_label
 }
 
 function formatTimestamp(createdAt: string): string {
@@ -26,12 +30,13 @@ export function groupMessages(
 
   for (const message of messages) {
     const previous = groups.at(-1)
-    if (previous && previous.senderId === message.sender_id) {
+    const groupKey = groupKeyFor(message)
+    if (previous && previous.groupKey === groupKey) {
       previous.messages.push(message)
       continue
     }
     groups.push({
-      senderId: message.sender_id,
+      groupKey,
       displayName: displayNameFor(message, usernameById),
       timestamp: formatTimestamp(message.created_at),
       messages: [message],
