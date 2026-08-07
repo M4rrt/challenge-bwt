@@ -7,11 +7,27 @@ import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import Paper from '@mui/material/Paper'
 import TextField from '@mui/material/TextField'
+import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { type Message, listMessages, listUsers, sendMessage } from '../lib/api'
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
+import { type Message, getMe, listMessages, listUsers, sendMessage } from '../lib/api'
 import { useAuth } from '../lib/auth/AuthContext'
 import { useConversationSocket } from '../lib/useConversationSocket'
-import { groupMessages } from '../lib/messageGrouping'
+import { groupMessages, type SenderKind } from '../lib/messageGrouping'
+
+const EXTERNAL_SENDER_TOOLTIP = 'Essa mensagem veio de um serviço externo'
+
+const NAME_COLOR_BY_SENDER_KIND: Record<SenderKind, string> = {
+  me: 'text.primary',
+  other: 'primary.main',
+  external: 'warning.dark',
+}
+
+const BODY_COLOR_BY_SENDER_KIND: Record<SenderKind, string> = {
+  me: 'text.primary',
+  other: 'text.primary',
+  external: 'warning.dark',
+}
 
 function upsertMessage(queryClient: QueryClient, conversationId: string, message: Message) {
   queryClient.setQueryData<Message[]>(['messages', conversationId], (current = []) =>
@@ -33,6 +49,7 @@ function Conversa() {
   const listRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
+  const meQuery = useQuery({ queryKey: ['me'], queryFn: () => getMe(token!), enabled: !!token })
   const usersQuery = useQuery({
     queryKey: ['users'],
     queryFn: () => listUsers(token!),
@@ -105,7 +122,7 @@ function Conversa() {
   }
 
   const usernameById = new Map(usersQuery.data?.map((user) => [user.id, user.username]) ?? [])
-  const groups = groupMessages(messages, usernameById)
+  const groups = groupMessages(messages, usernameById, meQuery.data?.id)
 
   return (
     <Paper
@@ -115,11 +132,29 @@ function Conversa() {
       <Box ref={listRef} onScroll={handleScroll} sx={{ flex: 1, overflowY: 'auto' }}>
         {groups.map((group) => (
           <Box key={group.messages[0].id} sx={{ mb: 2 }}>
-            <Typography variant="caption" color="text.secondary">
+            <Typography
+              variant="caption"
+              sx={{ color: NAME_COLOR_BY_SENDER_KIND[group.senderKind], display: 'inline-flex', alignItems: 'center', gap: 0.5 }}
+            >
               {group.displayName} · {group.timestamp}
+              {group.senderKind === 'external' && (
+                <Tooltip title={EXTERNAL_SENDER_TOOLTIP}>
+                  <InfoOutlinedIcon
+                    aria-label={EXTERNAL_SENDER_TOOLTIP}
+                    fontSize="inherit"
+                    sx={{ color: 'warning.dark' }}
+                  />
+                </Tooltip>
+              )}
             </Typography>
             {group.messages.map((message) => (
-              <Typography key={message.id}>{message.body}</Typography>
+              <Typography
+                key={message.id}
+                data-sender-kind={group.senderKind}
+                sx={{ color: BODY_COLOR_BY_SENDER_KIND[group.senderKind] }}
+              >
+                {message.body}
+              </Typography>
             ))}
           </Box>
         ))}
