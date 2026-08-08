@@ -2,8 +2,14 @@ import type { FormEvent } from 'react'
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
+import Alert from '@mui/material/Alert'
+import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
+import TextField from '@mui/material/TextField'
+import Typography from '@mui/material/Typography'
 import { ApiError, login as loginRequest } from '../lib/api'
 import { useAuth } from '../lib/auth/AuthContext'
+import AuthLayout from '../components/AuthLayout'
 
 function Login() {
   const [email, setEmail] = useState('')
@@ -25,42 +31,51 @@ function Login() {
   }
 
   return (
-    <main>
-      <h1>Login</h1>
-      <form onSubmit={handleSubmit}>
-        <label>
-          Email
-          <input
+    <AuthLayout title="Login">
+      <Box component="form" onSubmit={handleSubmit} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+          <Typography component="label" htmlFor="login-email" variant="body2" sx={{ fontWeight: 500 }}>
+            Email
+          </Typography>
+          <TextField
+            id="login-email"
             type="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            required
+            slotProps={{ htmlInput: { required: true } }}
+            size="small"
+            fullWidth
           />
-        </label>
-        <label>
-          Senha
-          <input
+        </Box>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+          <Typography component="label" htmlFor="login-password" variant="body2" sx={{ fontWeight: 500 }}>
+            Senha
+          </Typography>
+          <TextField
+            id="login-password"
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            required
+            slotProps={{ htmlInput: { required: true } }}
+            size="small"
+            fullWidth
           />
-        </label>
-        <button type="submit" disabled={mutation.isPending}>
+        </Box>
+        <Button type="submit" variant="contained" fullWidth disabled={mutation.isPending}>
           Entrar
-        </button>
+        </Button>
         {mutation.isError && (
-          <p role="alert">
+          <Alert severity="error">
             {mutation.error instanceof ApiError && mutation.error.status === 401
               ? 'Credenciais inválidas'
               : 'Não foi possível conectar ao servidor'}
-          </p>
+          </Alert>
         )}
-      </form>
-      <p>
+      </Box>
+      <Typography variant="body2" sx={{ mt: 2 }}>
         Não tem conta? <Link to="/register">Registrar</Link>
-      </p>
-    </main>
+      </Typography>
+    </AuthLayout>
   )
 }
 
