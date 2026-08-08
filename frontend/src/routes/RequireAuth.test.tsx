@@ -13,7 +13,7 @@ function renderWithRouter(initialPath: string) {
     <AuthProvider>
       <MemoryRouter initialEntries={[initialPath]}>
         <Routes>
-          <Route path="/login" element={<div>Login page</div>} />
+          <Route path="/" element={<div>Login page</div>} />
           <Route element={<RequireAuth />}>
             <Route path="/protected" element={<div>Protected content</div>} />
           </Route>
@@ -24,7 +24,7 @@ function renderWithRouter(initialPath: string) {
 }
 
 describe('RequireAuth', () => {
-  it('redirects to /login when there is no token', () => {
+  it('redirects to / when there is no token', () => {
     renderWithRouter('/protected')
 
     expect(screen.getByText('Login page')).toBeInTheDocument()

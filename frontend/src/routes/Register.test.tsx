@@ -18,7 +18,7 @@ function renderRegister() {
       <MemoryRouter initialEntries={['/register']}>
         <Routes>
           <Route path="/register" element={<Register />} />
-          <Route path="/login" element={<div>Login page</div>} />
+          <Route path="/" element={<div>Login page</div>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -30,7 +30,7 @@ beforeEach(() => {
 })
 
 describe('Register', () => {
-  it('navigates to /login after a successful registration', async () => {
+  it('navigates to / after a successful registration', async () => {
     vi.mocked(register).mockResolvedValue({ id: 'user-1', email: 'ana@example.com', username: 'ana' })
     const user = userEvent.setup()
     renderRegister()

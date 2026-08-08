@@ -5,7 +5,6 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './lib/auth/AuthContext'
 import { theme } from './theme'
 import Home from './routes/Home'
-import Login from './routes/Login'
 import Register from './routes/Register'
 import ConversasLayout from './routes/ConversasLayout'
 import ConversaEmptyState from './routes/ConversaEmptyState'
@@ -24,7 +23,6 @@ function App() {
           <BrowserRouter>
             <Routes>
               <Route path="/" element={<Home />} />
-              <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
               <Route element={<RequireAuth />}>
                 <Route path="/conversas" element={<ConversasLayout />}>

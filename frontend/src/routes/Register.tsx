@@ -19,7 +19,7 @@ function Register() {
   const mutation = useMutation({
     mutationFn: () => registerRequest(email, username, password),
     onSuccess: () => {
-      navigate('/login')
+      navigate('/')
     },
   })
 
@@ -87,7 +87,7 @@ function Register() {
         )}
       </Box>
       <Typography variant="body2" sx={{ mt: 2 }}>
-        Já tem conta? <Link to="/login">Entrar</Link>
+        Já tem conta? <Link to="/">Entrar</Link>
       </Typography>
     </AuthLayout>
   )
