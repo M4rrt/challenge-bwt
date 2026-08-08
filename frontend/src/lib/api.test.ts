@@ -10,6 +10,7 @@ import {
   login,
   register,
   sendMessage,
+  sendWebhookMessage,
   toWsUrl,
 } from './api'
 
@@ -236,6 +237,56 @@ describe('sendMessage', () => {
       body: 'oi',
       created_at: '2026-08-06T12:00:00Z',
     })
+  })
+})
+
+describe('sendWebhookMessage', () => {
+  it('posts the exact raw body string with the given signature and no Authorization header', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: 'msg-1',
+          conversation_id: 'conv-1',
+          sender_id: null,
+          sender_type: 'external',
+          source_label: 'crm',
+          body: 'oi',
+          created_at: '2026-08-06T12:00:00Z',
+        }),
+        { status: 201 },
+      ),
+    )
+    const rawBody = JSON.stringify({ conversation_id: 'conv-1', body: 'oi', source_label: 'crm' })
+
+    const result = await sendWebhookMessage(rawBody, 'deadbeef')
+
+    expect(fetch).toHaveBeenCalledWith(
+      'http://localhost:8000/webhook/messages',
+      expect.objectContaining({
+        method: 'POST',
+        body: rawBody,
+        headers: expect.objectContaining({ 'X-Signature': 'deadbeef' }),
+      }),
+    )
+    const [, options] = vi.mocked(fetch).mock.calls[0]
+    expect((options?.headers as Record<string, string> | undefined)?.Authorization).toBeUndefined()
+    expect(result).toEqual({
+      id: 'msg-1',
+      conversation_id: 'conv-1',
+      sender_id: null,
+      sender_type: 'external',
+      source_label: 'crm',
+      body: 'oi',
+      created_at: '2026-08-06T12:00:00Z',
+    })
+  })
+
+  it('throws an ApiError with the response status on failure', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ detail: 'invalid signature' }), { status: 401 }),
+    )
+
+    await expect(sendWebhookMessage('{}', 'bad-signature')).rejects.toThrow(ApiError)
   })
 })
 

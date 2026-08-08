@@ -11,6 +11,7 @@ import ConversasLayout from './routes/ConversasLayout'
 import ConversaEmptyState from './routes/ConversaEmptyState'
 import Conversa from './routes/Conversa'
 import RequireAuth from './routes/RequireAuth'
+import WebhookTestPage from './routes/WebhookTestPage'
 
 const queryClient = new QueryClient()
 
@@ -30,6 +31,7 @@ function App() {
                   <Route index element={<ConversaEmptyState />} />
                   <Route path=":conversationId" element={<Conversa />} />
                 </Route>
+                <Route path="/webhook" element={<WebhookTestPage />} />
               </Route>
             </Routes>
           </BrowserRouter>

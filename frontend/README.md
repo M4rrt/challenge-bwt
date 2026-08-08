@@ -18,6 +18,11 @@ See `docs/decisions.md` in the repo root for the reasoning behind these choices.
 
 The dev server runs at `http://localhost:5173`.
 
+## Environment variables
+
+- `VITE_API_URL` — base URL of the backend API.
+- `VITE_WEBHOOK_TEST_SECRET` — must match the backend's `WEBHOOK_HMAC_SECRET` for the `/webhook` test page (see `docs/adr/0005-client-side-hmac-webhook-test-page.md` in the repo root) to sign requests correctly. Test-page-only: this secret ships in the frontend bundle, so never set it to a real production secret. Do not commit a real value here — `.env` is gitignored.
+
 ## Build
 
 ```bash

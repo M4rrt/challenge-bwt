@@ -136,3 +136,11 @@ export function sendMessage(
     token,
   )
 }
+
+export function sendWebhookMessage(rawBody: string, signature: string): Promise<Message> {
+  return apiFetch<Message>('/webhook/messages', {
+    method: 'POST',
+    body: rawBody,
+    headers: { 'X-Signature': signature },
+  })
+}
