@@ -71,6 +71,28 @@ describe('ConversasLayout', () => {
     expect(await screen.findByText('Selecione uma conversa para começar')).toBeInTheDocument()
   })
 
+  it('renders a "Usar webHook" link pointing to /webhook', async () => {
+    const queryClient = new QueryClient()
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <MemoryRouter initialEntries={['/conversas']}>
+            <Routes>
+              <Route path="/conversas" element={<ConversasLayout />}>
+                <Route index element={<ConversaEmptyState />} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    )
+
+    expect(await screen.findByRole('link', { name: 'Usar webHook' })).toHaveAttribute(
+      'href',
+      '/webhook',
+    )
+  })
+
   it('does not show a stale new-activity indicator on the conversation just left, after a live message arrived while it was open', async () => {
     vi.mocked(listConversations)
       .mockResolvedValueOnce([

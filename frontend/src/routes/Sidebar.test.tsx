@@ -46,7 +46,8 @@ function renderConversas() {
         <MemoryRouter initialEntries={['/conversas']}>
           <Routes>
             <Route path="/conversas" element={<Sidebar />} />
-            <Route path="/login" element={<div>Login page</div>} />
+            <Route path="/conversas/:conversationId" element={<Sidebar />} />
+            <Route path="/" element={<div>Login page</div>} />
           </Routes>
         </MemoryRouter>
       </AuthProvider>
@@ -69,6 +70,21 @@ beforeEach(() => {
 })
 
 describe('Sidebar', () => {
+  it('shows the conversation count in the list header', async () => {
+    vi.mocked(listConversations).mockResolvedValue([
+      { id: 'conv-1', name: null, participant_user_ids: ['me-id', 'beto-id'], last_message_at: null },
+      {
+        id: 'conv-2',
+        name: 'Trio',
+        participant_user_ids: ['me-id', 'beto-id', 'carla-id'],
+        last_message_at: null,
+      },
+    ])
+    renderConversas()
+
+    expect(await screen.findByRole('heading', { name: 'Conversas (2)' })).toBeInTheDocument()
+  })
+
   it("renders the user's conversations, resolving 1:1s to the other participant's username", async () => {
     vi.mocked(listConversations).mockResolvedValue([
       { id: 'conv-1', name: null, participant_user_ids: ['me-id', 'beto-id'], last_message_at: null },
@@ -83,6 +99,35 @@ describe('Sidebar', () => {
 
     expect(await screen.findByText('beto')).toBeInTheDocument()
     expect(await screen.findByText('Trio')).toBeInTheDocument()
+  })
+
+  it('shows a person icon for a 1:1 item and a group icon for a group item', async () => {
+    vi.mocked(listConversations).mockResolvedValue([
+      { id: 'conv-1', name: null, participant_user_ids: ['me-id', 'beto-id'], last_message_at: null },
+      {
+        id: 'conv-2',
+        name: 'Trio',
+        participant_user_ids: ['me-id', 'beto-id', 'carla-id'],
+        last_message_at: null,
+      },
+    ])
+    renderConversas()
+
+    await screen.findByText('beto')
+    expect(screen.getByLabelText('Conversa individual')).toBeInTheDocument()
+    expect(screen.getByLabelText('Conversa em grupo')).toBeInTheDocument()
+  })
+
+  it('renders the "Nova conversa" button before the conversation list', async () => {
+    vi.mocked(listConversations).mockResolvedValue([
+      { id: 'conv-1', name: null, participant_user_ids: ['me-id', 'beto-id'], last_message_at: null },
+    ])
+    renderConversas()
+
+    const button = await screen.findByRole('button', { name: 'Nova conversa' })
+    const item = await screen.findByText('beto')
+
+    expect(button.compareDocumentPosition(item) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('refetches the user list when opening the new-conversation form', async () => {
@@ -106,13 +151,13 @@ describe('Sidebar', () => {
     await user.click(screen.getByRole('checkbox', { name: 'beto' }))
     await user.click(screen.getByRole('checkbox', { name: 'carla' }))
 
-    expect(screen.getByLabelText(/Nome do grupo/)).toBeInTheDocument()
+    expect(screen.getByPlaceholderText(/Nome do Grupo/i)).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Criar' }))
 
     expect(createConversation).not.toHaveBeenCalled()
 
-    await user.type(screen.getByLabelText(/Nome do grupo/), 'Trio')
+    await user.type(screen.getByPlaceholderText(/Nome do Grupo/i), 'Trio')
     await user.click(screen.getByRole('button', { name: 'Criar' }))
 
     await waitFor(() =>
@@ -234,5 +279,37 @@ describe('Sidebar', () => {
 
     await screen.findByText('beto')
     expect(screen.queryByLabelText('Nova atividade')).not.toBeInTheDocument()
+  })
+
+  it('navigates to the new conversation after creating it', async () => {
+    vi.mocked(listConversations).mockResolvedValue([])
+    const newConversation = {
+      id: 'conv-new',
+      name: null,
+      participant_user_ids: ['me-id', 'beto-id'],
+      last_message_at: null,
+    }
+    vi.mocked(createConversation).mockResolvedValue(newConversation)
+    const user = userEvent.setup()
+    const queryClient = new QueryClient()
+    localStorage.setItem('chat-app:token', 'token-123')
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <MemoryRouter initialEntries={['/conversas']}>
+            <Routes>
+              <Route path="/conversas" element={<Sidebar />} />
+              <Route path="/conversas/:conversationId" element={<div>Conversation view</div>} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    )
+
+    await user.click(await screen.findByRole('button', { name: 'Nova conversa' }))
+    await user.click(screen.getByRole('checkbox', { name: 'beto' }))
+    await user.click(screen.getByRole('button', { name: 'Criar' }))
+
+    expect(await screen.findByText('Conversation view')).toBeInTheDocument()
   })
 })

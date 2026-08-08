@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from '../lib/auth/AuthContext'
-import { getMe, listMessages, listUsers, sendMessage } from '../lib/api'
+import { getMe, listConversations, listMessages, listUsers, sendMessage } from '../lib/api'
 import Conversa from './Conversa'
 
 vi.mock('../lib/api', async () => {
@@ -13,6 +13,7 @@ vi.mock('../lib/api', async () => {
     ...actual,
     getMe: vi.fn(),
     listUsers: vi.fn(),
+    listConversations: vi.fn(),
     listMessages: vi.fn(),
     sendMessage: vi.fn(),
   }
@@ -76,11 +77,59 @@ beforeEach(() => {
 
   vi.mocked(getMe).mockReset().mockResolvedValue(ME)
   vi.mocked(listUsers).mockReset().mockResolvedValue(USERS)
+  vi.mocked(listConversations).mockReset().mockResolvedValue([
+    { id: 'conv-1', name: null, participant_user_ids: ['me-id', 'beto-id'], last_message_at: null },
+  ])
   vi.mocked(listMessages).mockReset()
   vi.mocked(sendMessage).mockReset()
 })
 
 describe('Conversa', () => {
+  it('shows the other participant\'s username at the top for an unnamed 1:1 conversation', async () => {
+    vi.mocked(listMessages).mockResolvedValue([])
+    renderConversa()
+
+    expect(await screen.findByRole('heading', { name: 'beto' })).toBeInTheDocument()
+  })
+
+  it('shows an individual-conversation icon in the header for a 1:1 conversation', async () => {
+    vi.mocked(listMessages).mockResolvedValue([])
+    renderConversa()
+
+    expect(await screen.findByLabelText('Conversa individual')).toBeInTheDocument()
+  })
+
+  it('shows the conversation name at the top for a named/group conversation', async () => {
+    vi.mocked(listConversations).mockResolvedValue([
+      {
+        id: 'conv-1',
+        name: 'Trio',
+        participant_user_ids: ['me-id', 'beto-id', 'carla-id'],
+        last_message_at: null,
+      },
+    ])
+    vi.mocked(listMessages).mockResolvedValue([])
+    renderConversa()
+
+    expect(await screen.findByRole('heading', { name: 'Trio' })).toBeInTheDocument()
+  })
+
+  it('shows a group-conversation icon in the header for a group conversation, not the individual one', async () => {
+    vi.mocked(listConversations).mockResolvedValue([
+      {
+        id: 'conv-1',
+        name: 'Trio',
+        participant_user_ids: ['me-id', 'beto-id', 'carla-id'],
+        last_message_at: null,
+      },
+    ])
+    vi.mocked(listMessages).mockResolvedValue([])
+    renderConversa()
+
+    expect(await screen.findByLabelText('Conversa em grupo')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Conversa individual')).not.toBeInTheDocument()
+  })
+
   it('renders the message backlog on open', async () => {
     vi.mocked(listMessages).mockResolvedValue([
       {
