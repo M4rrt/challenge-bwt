@@ -1,5 +1,5 @@
 import type { FormEvent } from 'react'
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Box from '@mui/material/Box'
@@ -20,6 +20,8 @@ import {
   listUsers,
 } from '../lib/api'
 import { useAuth } from '../lib/auth/AuthContext'
+import { hasNewActivity } from '../lib/lastSeen'
+import { useUserSocket } from '../lib/useUserSocket'
 
 function conversationLabel(
   conversation: Conversation,
@@ -55,6 +57,12 @@ function Sidebar() {
     queryFn: () => listConversations(token!),
     enabled: !!token,
   })
+
+  const handleUserSocketMessage = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['conversations'] })
+  }, [queryClient])
+
+  useUserSocket({ token, onMessage: handleUserSocketMessage })
 
   const createMutation = useMutation({
     mutationFn: () => createConversation(selectedUserIds, groupName || undefined, token!),
@@ -108,11 +116,34 @@ function Sidebar() {
             selected={conversation.id === conversationId}
           >
             <ListItemText primary={conversationLabel(conversation, meQuery.data?.id, usernameById)} />
+            {conversation.last_message_at}
+            {conversation.id !== conversationId &&
+              meQuery.data?.id &&
+              hasNewActivity(meQuery.data.id, conversation) && (
+                <Box
+                  component="span"
+                  aria-label="Nova atividade"
+                  sx={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    bgcolor: 'primary.main',
+                    display: 'inline-block',
+                    ml: 1,
+                  }}
+                />
+              )}
           </ListItemButton>
         ))}
       </List>
       {!isFormOpen && (
-        <Button variant="contained" onClick={() => setIsFormOpen(true)}>
+        <Button
+          variant="contained"
+          onClick={() => {
+            setIsFormOpen(true)
+            usersQuery.refetch()
+          }}
+        >
           Nova conversa
         </Button>
       )}

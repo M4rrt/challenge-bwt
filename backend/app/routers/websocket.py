@@ -42,3 +42,25 @@ async def conversation_socket(
         pass
     finally:
         connection_manager.disconnect(conversation_id, websocket)
+
+
+@router.websocket("/users/me")
+async def user_socket(
+    websocket: WebSocket,
+    token: str,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    user = await decode_user_from_token(token, db)
+    if user is None:
+        await websocket.close(code=1008)
+        return
+
+    await websocket.accept()
+    connection_manager.connect_user(user.id, websocket)
+    try:
+        while True:
+            await websocket.receive_json()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        connection_manager.disconnect_user(user.id, websocket)

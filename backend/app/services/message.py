@@ -7,6 +7,7 @@ from app.models.conversation import Conversation, ConversationParticipant
 from app.models.message import Message
 from app.models.user import User
 from app.schemas.message import MessageCreate, WebhookMessageCreate
+from app.services.conversation import notify_participants
 from app.services.realtime import publish_message
 
 
@@ -32,6 +33,7 @@ async def _persist_and_publish(db: AsyncSession, message: Message) -> Message:
     await db.commit()
     await db.refresh(message)
     await publish_message(message)
+    await notify_participants(db, message.conversation_id)
     return message
 
 

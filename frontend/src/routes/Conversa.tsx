@@ -8,9 +8,10 @@ import Chip from '@mui/material/Chip'
 import Paper from '@mui/material/Paper'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { type Message, listMessages, listUsers, sendMessage } from '../lib/api'
+import { type Message, getMe, listMessages, listUsers, sendMessage } from '../lib/api'
 import { useAuth } from '../lib/auth/AuthContext'
 import { useConversationSocket } from '../lib/useConversationSocket'
+import { setLastSeenAt } from '../lib/lastSeen'
 import { groupMessages } from '../lib/messageGrouping'
 
 function upsertMessage(queryClient: QueryClient, conversationId: string, message: Message) {
@@ -33,6 +34,7 @@ function Conversa() {
   const listRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
+  const meQuery = useQuery({ queryKey: ['me'], queryFn: () => getMe(token!), enabled: !!token })
   const usersQuery = useQuery({
     queryKey: ['users'],
     queryFn: () => listUsers(token!),
@@ -66,6 +68,25 @@ function Conversa() {
   })
 
   const messages = messagesQuery.data ?? []
+
+  const latestMessagesRef = useRef<Message[]>(messages)
+  useEffect(() => {
+    latestMessagesRef.current = messagesQuery.data ?? []
+  }, [messagesQuery.data])
+
+  useEffect(() => {
+    const meId = meQuery.data?.id
+    if (!meId || !conversationId) return
+
+    function recordLastSeen() {
+      const lastMessage = latestMessagesRef.current.at(-1)
+      setLastSeenAt(meId!, conversationId!, lastMessage?.created_at ?? null)
+    }
+
+    recordLastSeen()
+    return recordLastSeen
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meQuery.data?.id, conversationId])
 
   useEffect(() => {
     if (isAtBottomRef.current) {

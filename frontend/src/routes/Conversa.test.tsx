@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from '../lib/auth/AuthContext'
 import { getMe, listMessages, listUsers, sendMessage } from '../lib/api'
@@ -43,6 +43,23 @@ function renderConversa() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <MemoryRouter initialEntries={['/conversas/conv-1']}>
+          <Routes>
+            <Route path="/conversas/:conversationId" element={<Conversa />} />
+          </Routes>
+        </MemoryRouter>
+      </AuthProvider>
+    </QueryClientProvider>,
+  )
+}
+
+function renderConversaWithNavigation() {
+  const queryClient = new QueryClient()
+  localStorage.setItem('chat-app:token', 'token-123')
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <MemoryRouter initialEntries={['/conversas/conv-1']}>
+          <Link to="/conversas/conv-2">ir para conv-2</Link>
           <Routes>
             <Route path="/conversas/:conversationId" element={<Conversa />} />
           </Routes>
@@ -133,5 +150,63 @@ describe('Conversa', () => {
     })
 
     expect(await screen.findByText('oi beto')).toBeInTheDocument()
+  })
+
+  it('records the last-seen cursor for the conversation when it closes', async () => {
+    vi.mocked(listMessages).mockResolvedValue([
+      {
+        id: 'msg-1',
+        conversation_id: 'conv-1',
+        sender_id: 'beto-id',
+        sender_type: 'user',
+        source_label: null,
+        body: 'oi ana',
+        created_at: '2026-08-06T12:00:00Z',
+      },
+    ])
+    const { unmount } = renderConversa()
+
+    await screen.findByText('oi ana')
+    unmount()
+
+    expect(localStorage.getItem('chat-app:lastSeen:me-id:conv-1')).toBe('2026-08-06T12:00:00Z')
+  })
+
+  it('records the last-seen cursor for the conversation left when switching to another one', async () => {
+    vi.mocked(listMessages).mockImplementation(async (conversationId: string) =>
+      conversationId === 'conv-1'
+        ? [
+            {
+              id: 'msg-1',
+              conversation_id: 'conv-1',
+              sender_id: 'beto-id',
+              sender_type: 'user',
+              source_label: null,
+              body: 'oi ana',
+              created_at: '2026-08-06T12:00:00Z',
+            },
+          ]
+        : [],
+    )
+    const user = userEvent.setup()
+    renderConversaWithNavigation()
+
+    await screen.findByText('oi ana')
+
+    await user.click(screen.getByText('ir para conv-2'))
+
+    expect(localStorage.getItem('chat-app:lastSeen:me-id:conv-1')).toBe('2026-08-06T12:00:00Z')
+  })
+
+  it('records a last-seen cursor even for a conversation with no messages, when leaving it', async () => {
+    vi.mocked(listMessages).mockResolvedValue([])
+    const { unmount } = renderConversa()
+
+    await waitFor(() =>
+      expect(localStorage.getItem('chat-app:lastSeen:me-id:conv-1')).not.toBeNull(),
+    )
+    unmount()
+
+    expect(localStorage.getItem('chat-app:lastSeen:me-id:conv-1')).not.toBeNull()
   })
 })

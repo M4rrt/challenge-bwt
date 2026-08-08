@@ -18,6 +18,18 @@ vi.mock('../lib/api', async () => {
   }
 })
 
+class FakeWebSocket {
+  static instances: FakeWebSocket[] = []
+  url: string
+  onmessage: ((event: { data: string }) => void) | null = null
+  onclose: (() => void) | null = null
+  constructor(url: string) {
+    this.url = url
+    FakeWebSocket.instances.push(this)
+  }
+  close() {}
+}
+
 const ME = { id: 'me-id', email: 'ana@example.com', username: 'ana' }
 const USERS = [
   { id: 'me-id', username: 'ana' },
@@ -44,6 +56,9 @@ function renderConversas() {
 
 beforeEach(() => {
   localStorage.clear()
+  FakeWebSocket.instances = []
+  vi.stubGlobal('WebSocket', FakeWebSocket)
+
   vi.mocked(getMe).mockReset()
   vi.mocked(listUsers).mockReset()
   vi.mocked(listConversations).mockReset()
@@ -56,13 +71,30 @@ beforeEach(() => {
 describe('Sidebar', () => {
   it("renders the user's conversations, resolving 1:1s to the other participant's username", async () => {
     vi.mocked(listConversations).mockResolvedValue([
-      { id: 'conv-1', name: null, participant_user_ids: ['me-id', 'beto-id'] },
-      { id: 'conv-2', name: 'Trio', participant_user_ids: ['me-id', 'beto-id', 'carla-id'] },
+      { id: 'conv-1', name: null, participant_user_ids: ['me-id', 'beto-id'], last_message_at: null },
+      {
+        id: 'conv-2',
+        name: 'Trio',
+        participant_user_ids: ['me-id', 'beto-id', 'carla-id'],
+        last_message_at: null,
+      },
     ])
     renderConversas()
 
     expect(await screen.findByText('beto')).toBeInTheDocument()
     expect(await screen.findByText('Trio')).toBeInTheDocument()
+  })
+
+  it('refetches the user list when opening the new-conversation form', async () => {
+    vi.mocked(listConversations).mockResolvedValue([])
+    const user = userEvent.setup()
+    renderConversas()
+
+    await waitFor(() => expect(listUsers).toHaveBeenCalledTimes(1))
+
+    await user.click(await screen.findByRole('button', { name: 'Nova conversa' }))
+
+    await waitFor(() => expect(listUsers).toHaveBeenCalledTimes(2))
   })
 
   it('requires a name before creating a group conversation', async () => {
@@ -100,6 +132,7 @@ describe('Sidebar', () => {
       id: 'conv-1',
       name: null,
       participant_user_ids: ['me-id', 'beto-id'],
+      last_message_at: null,
     }
     vi.mocked(listConversations).mockResolvedValue([existingConversation])
     vi.mocked(createConversation).mockResolvedValue(existingConversation)
@@ -114,5 +147,92 @@ describe('Sidebar', () => {
 
     await waitFor(() => expect(createConversation).toHaveBeenCalledWith(['beto-id'], undefined, 'token-123'))
     expect(await screen.findAllByText('beto')).toHaveLength(1)
+  })
+
+  it('refetches the conversation list when the user-channel socket receives a message', async () => {
+    vi.mocked(listConversations).mockResolvedValue([])
+    renderConversas()
+
+    await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1))
+    expect(FakeWebSocket.instances[0].url).toContain('/websocket/users/me?token=token-123')
+    expect(listConversations).toHaveBeenCalledTimes(1)
+
+    FakeWebSocket.instances[0].onmessage?.({ data: '{}' })
+
+    await waitFor(() => expect(listConversations).toHaveBeenCalledTimes(2))
+  })
+
+  it('shows a new-activity indicator for a conversation with a message newer than the last-seen cursor', async () => {
+    localStorage.setItem('chat-app:lastSeen:me-id:conv-1', '2026-08-06T12:00:00Z')
+    vi.mocked(listConversations).mockResolvedValue([
+      {
+        id: 'conv-1',
+        name: null,
+        participant_user_ids: ['me-id', 'beto-id'],
+        last_message_at: '2026-08-06T12:05:00Z',
+      },
+    ])
+    renderConversas()
+
+    expect(await screen.findByLabelText('Nova atividade')).toBeInTheDocument()
+  })
+
+  it('does not show a new-activity indicator when the last-seen cursor is already current', async () => {
+    localStorage.setItem('chat-app:lastSeen:me-id:conv-1', '2026-08-06T12:05:00Z')
+    vi.mocked(listConversations).mockResolvedValue([
+      {
+        id: 'conv-1',
+        name: null,
+        participant_user_ids: ['me-id', 'beto-id'],
+        last_message_at: '2026-08-06T12:05:00Z',
+      },
+    ])
+    renderConversas()
+
+    await screen.findByText('beto')
+    expect(screen.queryByLabelText('Nova atividade')).not.toBeInTheDocument()
+  })
+
+  it('does not show a new-activity indicator when there is no stored cursor (cold start)', async () => {
+    vi.mocked(listConversations).mockResolvedValue([
+      {
+        id: 'conv-1',
+        name: null,
+        participant_user_ids: ['me-id', 'beto-id'],
+        last_message_at: '2026-08-06T12:05:00Z',
+      },
+    ])
+    renderConversas()
+
+    await screen.findByText('beto')
+    expect(screen.queryByLabelText('Nova atividade')).not.toBeInTheDocument()
+  })
+
+  it('does not show a new-activity indicator for the conversation currently open', async () => {
+    localStorage.setItem('chat-app:lastSeen:me-id:conv-1', '2026-08-06T12:00:00Z')
+    vi.mocked(listConversations).mockResolvedValue([
+      {
+        id: 'conv-1',
+        name: null,
+        participant_user_ids: ['me-id', 'beto-id'],
+        last_message_at: '2026-08-06T12:05:00Z',
+      },
+    ])
+    const queryClient = new QueryClient()
+    localStorage.setItem('chat-app:token', 'token-123')
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <MemoryRouter initialEntries={['/conversas/conv-1']}>
+            <Routes>
+              <Route path="/conversas/:conversationId" element={<Sidebar />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    )
+
+    await screen.findByText('beto')
+    expect(screen.queryByLabelText('Nova atividade')).not.toBeInTheDocument()
   })
 })
