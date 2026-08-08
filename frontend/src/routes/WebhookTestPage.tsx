@@ -23,6 +23,9 @@ function errorDetail(error: unknown): string {
     }
     return `Erro ${error.status}`
   }
+  if (error instanceof Error) {
+    return error.message
+  }
   return 'Não foi possível conectar ao servidor'
 }
 
@@ -43,6 +46,9 @@ function WebhookTestPage() {
         source_label: senderName || null,
       })
       const secret = (import.meta.env.VITE_WEBHOOK_TEST_SECRET as string | undefined) ?? ''
+      if (!secret) {
+        throw new Error('VITE_WEBHOOK_TEST_SECRET não configurado')
+      }
       const signature = await signWebhookBody(secret, rawBody)
       return sendWebhookMessage(rawBody, signature)
     },
@@ -122,7 +128,20 @@ function WebhookTestPage() {
         </Box>
         {mutation.isSuccess && (
           <Alert severity="success">
-            Mensagem criada: {mutation.data.id} ({mutation.data.created_at})
+            <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '2px 8px' }}>
+              <Typography component="dt" variant="body2" sx={{ fontWeight: 500 }}>id</Typography>
+              <Typography component="dd" variant="body2" sx={{ m: 0 }}>{mutation.data.id}</Typography>
+              <Typography component="dt" variant="body2" sx={{ fontWeight: 500 }}>conversation_id</Typography>
+              <Typography component="dd" variant="body2" sx={{ m: 0 }}>{mutation.data.conversation_id}</Typography>
+              <Typography component="dt" variant="body2" sx={{ fontWeight: 500 }}>sender_type</Typography>
+              <Typography component="dd" variant="body2" sx={{ m: 0 }}>{mutation.data.sender_type}</Typography>
+              <Typography component="dt" variant="body2" sx={{ fontWeight: 500 }}>source_label</Typography>
+              <Typography component="dd" variant="body2" sx={{ m: 0 }}>{mutation.data.source_label ?? '—'}</Typography>
+              <Typography component="dt" variant="body2" sx={{ fontWeight: 500 }}>body</Typography>
+              <Typography component="dd" variant="body2" sx={{ m: 0 }}>{mutation.data.body}</Typography>
+              <Typography component="dt" variant="body2" sx={{ fontWeight: 500 }}>created_at</Typography>
+              <Typography component="dd" variant="body2" sx={{ m: 0 }}>{mutation.data.created_at}</Typography>
+            </Box>
           </Alert>
         )}
         {mutation.isError && <Alert severity="error">{errorDetail(mutation.error)}</Alert>}

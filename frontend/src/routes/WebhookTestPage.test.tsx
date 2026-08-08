@@ -69,11 +69,29 @@ describe('WebhookTestPage', () => {
     await user.type(screen.getByLabelText('Nome do remetente'), 'crm')
     await user.click(screen.getByRole('button', { name: 'Enviar' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('msg-1')
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('msg-1')
+    expect(alert).toHaveTextContent('oi')
+    expect(alert).toHaveTextContent('external')
+    expect(alert).toHaveTextContent('crm')
     expect(sendWebhookMessage).toHaveBeenCalledWith(
       JSON.stringify({ conversation_id: 'conv-1', body: 'oi', source_label: 'crm' }),
       expect.any(String),
     )
+  })
+
+  it('shows a clear error when VITE_WEBHOOK_TEST_SECRET is not configured', async () => {
+    vi.stubEnv('VITE_WEBHOOK_TEST_SECRET', '')
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('ana')
+
+    await user.type(screen.getByLabelText('Conversation ID'), 'conv-1')
+    await user.type(screen.getByLabelText('Mensagem'), 'oi')
+    await user.click(screen.getByRole('button', { name: 'Enviar' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('VITE_WEBHOOK_TEST_SECRET')
+    expect(sendWebhookMessage).not.toHaveBeenCalled()
   })
 
   it('shows the error detail when the webhook call is rejected', async () => {
