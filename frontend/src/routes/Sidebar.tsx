@@ -20,7 +20,7 @@ import {
   listUsers,
 } from '../lib/api'
 import { useAuth } from '../lib/auth/AuthContext'
-import { hasNewActivity } from '../lib/lastSeen'
+import { hasNewActivity, setLastSeenAt } from '../lib/lastSeen'
 import { useUserSocket } from '../lib/useUserSocket'
 
 function conversationLabel(
@@ -79,6 +79,14 @@ function Sidebar() {
     navigate('/login')
   }
 
+  function markCurrentConversationSeen() {
+    if (!conversationId || !meQuery.data?.id) return
+    const current = conversationsQuery.data?.find((c) => c.id === conversationId)
+    if (current) {
+      setLastSeenAt(meQuery.data.id, conversationId, current.last_message_at)
+    }
+  }
+
   function toggleParticipant(userId: string) {
     setSelectedUserIds((current) =>
       current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId],
@@ -114,9 +122,9 @@ function Sidebar() {
             component={Link}
             to={`/conversas/${conversation.id}`}
             selected={conversation.id === conversationId}
+            onClick={markCurrentConversationSeen}
           >
             <ListItemText primary={conversationLabel(conversation, meQuery.data?.id, usernameById)} />
-            {conversation.last_message_at}
             {conversation.id !== conversationId &&
               meQuery.data?.id &&
               hasNewActivity(meQuery.data.id, conversation) && (
