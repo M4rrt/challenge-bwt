@@ -37,9 +37,11 @@ describe('Home', () => {
   it('renders the login form and links to /register', () => {
     renderHome()
 
-    expect(screen.getByLabelText('Email')).toBeInTheDocument()
+    expect(screen.getByText('Entrar no Chat-App')).toBeInTheDocument()
+    expect(screen.getByText('Informe suas credenciais para entrar')).toBeInTheDocument()
+    expect(screen.getByLabelText('E-mail')).toBeInTheDocument()
     expect(screen.getByLabelText('Senha')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Registrar' })).toHaveAttribute('href', '/register')
+    expect(screen.getByRole('link', { name: 'Cadastre-se aqui' })).toHaveAttribute('href', '/register')
   })
 
   it('stores the token and navigates to /conversas on success', async () => {
@@ -47,7 +49,7 @@ describe('Home', () => {
     const user = userEvent.setup()
     renderHome()
 
-    await user.type(screen.getByLabelText('Email'), 'ana@example.com')
+    await user.type(screen.getByLabelText('E-mail'), 'ana@example.com')
     await user.type(screen.getByLabelText('Senha'), 'Senha-Forte-123')
     await user.click(screen.getByRole('button', { name: 'Entrar' }))
 
@@ -60,7 +62,7 @@ describe('Home', () => {
     const user = userEvent.setup()
     renderHome()
 
-    await user.type(screen.getByLabelText('Email'), 'ana@example.com')
+    await user.type(screen.getByLabelText('E-mail'), 'ana@example.com')
     await user.type(screen.getByLabelText('Senha'), 'wrong-password')
     await user.click(screen.getByRole('button', { name: 'Entrar' }))
 

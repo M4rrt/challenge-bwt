@@ -41,13 +41,16 @@ afterEach(() => {
 })
 
 describe('WebhookTestPage', () => {
-  it('shows the current username and the test disclaimer', async () => {
+  it('shows the titlebar, the connected user chip and the disclaimer callout', async () => {
     renderPage()
 
-    expect(await screen.findByText('ana')).toBeInTheDocument()
+    expect(screen.getByText('Painel de Integração e Teste de WebHook')).toBeInTheDocument()
+    expect(await screen.findByText('Usuário Conectado: ana')).toBeInTheDocument()
+    expect(screen.getByText('Ativo')).toBeInTheDocument()
     expect(
       screen.getByText('essa é apenas uma pagina para teste do WebHook'),
     ).toBeInTheDocument()
+    expect(screen.getAllByText('Voltar às Conversas').length).toBeGreaterThan(0)
   })
 
   it('signs and submits the form, showing the created message on success', async () => {
@@ -62,12 +65,12 @@ describe('WebhookTestPage', () => {
     })
     const user = userEvent.setup()
     renderPage()
-    await screen.findByText('ana')
+    await screen.findByText('Usuário Conectado: ana')
 
     await user.type(screen.getByLabelText('Conversation ID'), 'conv-1')
     await user.type(screen.getByLabelText('Mensagem'), 'oi')
     await user.type(screen.getByLabelText('Nome do remetente'), 'crm')
-    await user.click(screen.getByRole('button', { name: 'Enviar' }))
+    await user.click(screen.getByRole('button', { name: 'Enviar WebHook de Teste' }))
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent('msg-1')
@@ -84,11 +87,11 @@ describe('WebhookTestPage', () => {
     vi.stubEnv('VITE_WEBHOOK_TEST_SECRET', '')
     const user = userEvent.setup()
     renderPage()
-    await screen.findByText('ana')
+    await screen.findByText('Usuário Conectado: ana')
 
     await user.type(screen.getByLabelText('Conversation ID'), 'conv-1')
     await user.type(screen.getByLabelText('Mensagem'), 'oi')
-    await user.click(screen.getByRole('button', { name: 'Enviar' }))
+    await user.click(screen.getByRole('button', { name: 'Enviar WebHook de Teste' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('VITE_WEBHOOK_TEST_SECRET')
     expect(sendWebhookMessage).not.toHaveBeenCalled()
@@ -100,11 +103,11 @@ describe('WebhookTestPage', () => {
     )
     const user = userEvent.setup()
     renderPage()
-    await screen.findByText('ana')
+    await screen.findByText('Usuário Conectado: ana')
 
     await user.type(screen.getByLabelText('Conversation ID'), 'conv-1')
     await user.type(screen.getByLabelText('Mensagem'), 'oi')
-    await user.click(screen.getByRole('button', { name: 'Enviar' }))
+    await user.click(screen.getByRole('button', { name: 'Enviar WebHook de Teste' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('invalid signature')
   })

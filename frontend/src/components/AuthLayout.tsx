@@ -1,15 +1,15 @@
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
-import Paper from '@mui/material/Paper'
-import Tooltip from '@mui/material/Tooltip'
-import Typography from '@mui/material/Typography'
+import WindowChrome from './WindowChrome'
 
 interface AuthLayoutProps {
-  title: string
+  titlebarIcon: ReactNode
+  titlebarTitle: string
+  titlebarActions?: ReactNode
   children: ReactNode
 }
 
-function AuthLayout({ title, children }: AuthLayoutProps) {
+function AuthLayout({ titlebarIcon, titlebarTitle, titlebarActions, children }: AuthLayoutProps) {
   return (
     <Box
       sx={{
@@ -17,58 +17,18 @@ function AuthLayout({ title, children }: AuthLayoutProps) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        bgcolor: 'background.default',
+        bgcolor: '#a4c2e6',
         p: 2,
       }}
     >
-      <Paper
-        elevation={2}
-        sx={{
-          width: '100%',
-          maxWidth: 380,
-          p: 4,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: 2,
-        }}
+      <WindowChrome
+        icon={titlebarIcon}
+        title={titlebarTitle}
+        actions={titlebarActions}
+        bodySx={{ alignItems: 'center' }}
       >
-        <Tooltip
-          title={
-            <>
-              Msn icons created by IconBaandar -{' '}
-              <a
-                href="https://www.flaticon.com/free-icons/msn"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ color: 'inherit' }}
-              >
-                Flaticon
-              </a>
-            </>
-          }
-        >
-          <Box
-            component="img"
-            src="/logo.png"
-            alt="Logo"
-            sx={{
-              width: 112,
-              height: 112,
-              objectFit: 'contain',
-              borderRadius: 2,
-              border: '1px solid',
-              borderColor: 'divider',
-              p: 1,
-              bgcolor: '#fff',
-            }}
-          />
-        </Tooltip>
-        <Typography variant="h6" component="h1">
-          {title}
-        </Typography>
-        <Box sx={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 2 }}>{children}</Box>
-      </Paper>
+        {children}
+      </WindowChrome>
     </Box>
   )
 }
