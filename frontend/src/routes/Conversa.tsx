@@ -13,6 +13,7 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import { type Message, getMe, listMessages, listUsers, sendMessage } from '../lib/api'
 import { useAuth } from '../lib/auth/AuthContext'
 import { useConversationSocket } from '../lib/useConversationSocket'
+import { setLastSeenAt } from '../lib/lastSeen'
 import { groupMessages, type SenderKind } from '../lib/messageGrouping'
 
 const EXTERNAL_SENDER_TOOLTIP = 'Essa mensagem veio de um serviço externo'
@@ -83,6 +84,25 @@ function Conversa() {
   })
 
   const messages = messagesQuery.data ?? []
+
+  const latestMessagesRef = useRef<Message[]>(messages)
+  useEffect(() => {
+    latestMessagesRef.current = messagesQuery.data ?? []
+  }, [messagesQuery.data])
+
+  useEffect(() => {
+    const meId = meQuery.data?.id
+    if (!meId || !conversationId) return
+
+    function recordLastSeen() {
+      const lastMessage = latestMessagesRef.current.at(-1)
+      setLastSeenAt(meId!, conversationId!, lastMessage?.created_at ?? null)
+    }
+
+    recordLastSeen()
+    return recordLastSeen
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meQuery.data?.id, conversationId])
 
   useEffect(() => {
     if (isAtBottomRef.current) {

@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from pydantic import BaseModel
 
@@ -12,3 +13,4 @@ class ConversationRead(BaseModel):
     id: uuid.UUID
     name: str | None
     participant_user_ids: list[uuid.UUID]
+    last_message_at: datetime | None = None

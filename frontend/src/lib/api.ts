@@ -82,6 +82,7 @@ export interface Conversation {
   id: string
   name: string | null
   participant_user_ids: string[]
+  last_message_at: string | null
 }
 
 export function getMe(token: string): Promise<CurrentUser> {
