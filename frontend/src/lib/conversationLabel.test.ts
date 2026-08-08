@@ -35,4 +35,10 @@ describe('conversationLabel', () => {
 
     expect(conversationLabel(conversation, 'me-id', usernameById)).toBe('Conversa')
   })
+
+  it('does not fall back to the first participant when currentUserId is not yet known', () => {
+    const conversation = makeConversation({ name: null, participant_user_ids: ['beto-id', 'me-id'] })
+
+    expect(conversationLabel(conversation, undefined, usernameById)).toBe('Nova Conversa')
+  })
 })
