@@ -13,7 +13,9 @@ class Conversation(Base):
     name: Mapped[str | None] = mapped_column(String, nullable=True)
 
     participants: Mapped[list["ConversationParticipant"]] = relationship(
-        back_populates="conversation", cascade="all, delete-orphan"
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        order_by="ConversationParticipant.user_id",
     )
 
 
