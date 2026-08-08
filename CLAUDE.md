@@ -35,4 +35,6 @@ Structure of each cycle:
 **STATUS** — behaviors covered + next simplest behavior.
 
 ## Commits
+Never commit without asking first and getting explicit confirmation — even when a skill's own instructions say to commit (e.g. `/implement`'s "commit your work" step). Finish the work, then ask.
+
 use Conventional Commits: `<type>[(scope)]: <descrição>`. Types: `feat`, `fix`, `refactor`, `test`, `chore`, `docs`, `perf`, `ci`, `build`, `style`, `revert`. Breaking change: `!` on prefix or `BREAKING CHANGE:` on footer.
