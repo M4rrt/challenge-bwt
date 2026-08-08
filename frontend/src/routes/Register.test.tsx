@@ -30,15 +30,23 @@ beforeEach(() => {
 })
 
 describe('Register', () => {
+  it('renders the messenger-themed titlebar and heading', () => {
+    renderRegister()
+
+    expect(screen.getByText('Criar nova conta no Chat-App')).toBeInTheDocument()
+    expect(screen.getByText('Cadastro de Novo Usuário')).toBeInTheDocument()
+    expect(screen.getByLabelText('Nome de Usuário (Nick do Chat-App)')).toBeInTheDocument()
+  })
+
   it('navigates to / after a successful registration', async () => {
     vi.mocked(register).mockResolvedValue({ id: 'user-1', email: 'ana@example.com', username: 'ana' })
     const user = userEvent.setup()
     renderRegister()
 
-    await user.type(screen.getByLabelText('Email'), 'ana@example.com')
-    await user.type(screen.getByLabelText('Nome de usuário'), 'ana')
+    await user.type(screen.getByLabelText('E-mail'), 'ana@example.com')
+    await user.type(screen.getByLabelText('Nome de Usuário (Nick do Chat-App)'), 'ana')
     await user.type(screen.getByLabelText('Senha'), 'Senha-Forte-123')
-    await user.click(screen.getByRole('button', { name: 'Criar conta' }))
+    await user.click(screen.getByRole('button', { name: 'Concluir Cadastro' }))
 
     expect(await screen.findByText('Login page')).toBeInTheDocument()
   })
@@ -48,10 +56,10 @@ describe('Register', () => {
     const user = userEvent.setup()
     renderRegister()
 
-    await user.type(screen.getByLabelText('Email'), 'dup@example.com')
-    await user.type(screen.getByLabelText('Nome de usuário'), 'dup')
+    await user.type(screen.getByLabelText('E-mail'), 'dup@example.com')
+    await user.type(screen.getByLabelText('Nome de Usuário (Nick do Chat-App)'), 'dup')
     await user.type(screen.getByLabelText('Senha'), 'Senha-Forte-123')
-    await user.click(screen.getByRole('button', { name: 'Criar conta' }))
+    await user.click(screen.getByRole('button', { name: 'Concluir Cadastro' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Email já cadastrado')
     expect(screen.queryByText('Login page')).not.toBeInTheDocument()
@@ -64,14 +72,20 @@ describe('Register', () => {
     const user = userEvent.setup()
     renderRegister()
 
-    await user.type(screen.getByLabelText('Email'), 'ana@example.com')
-    await user.type(screen.getByLabelText('Nome de usuário'), 'ana')
+    await user.type(screen.getByLabelText('E-mail'), 'ana@example.com')
+    await user.type(screen.getByLabelText('Nome de Usuário (Nick do Chat-App)'), 'ana')
     await user.type(screen.getByLabelText('Senha'), 'weak')
-    await user.click(screen.getByRole('button', { name: 'Criar conta' }))
+    await user.click(screen.getByRole('button', { name: 'Concluir Cadastro' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Senha deve ter pelo menos 8 caracteres, com maiúscula, minúscula e um número ou símbolo',
     )
     expect(screen.queryByText('Login page')).not.toBeInTheDocument()
+  })
+
+  it('links back to the login screen', () => {
+    renderRegister()
+
+    expect(screen.getByRole('link', { name: 'Ir para Tela de Login' })).toHaveAttribute('href', '/')
   })
 })
