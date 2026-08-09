@@ -1,3 +1,5 @@
+import { isTokenExpired } from './jwt'
+
 const DEFAULT_API_URL = 'http://localhost:8000'
 
 export const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? DEFAULT_API_URL
@@ -17,14 +19,28 @@ export class ApiError extends Error {
   }
 }
 
+type RefreshHandler = () => Promise<string>
+
+let refreshHandler: RefreshHandler | null = null
+
+export function setRefreshHandler(handler: RefreshHandler | null) {
+  refreshHandler = handler
+}
+
 export async function apiFetch<T>(
   path: string,
   options: RequestInit = {},
   token?: string,
+  isRetry = false,
 ): Promise<T> {
+  let effectiveToken = token
+  if (effectiveToken && refreshHandler && !isRetry && isTokenExpired(effectiveToken)) {
+    effectiveToken = await refreshHandler()
+  }
+
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(effectiveToken ? { Authorization: `Bearer ${effectiveToken}` } : {}),
     ...options.headers,
   }
 
@@ -32,6 +48,10 @@ export async function apiFetch<T>(
   const body = await response.json().catch(() => undefined)
 
   if (!response.ok) {
+    if (response.status === 401 && effectiveToken && refreshHandler && !isRetry) {
+      const newToken = await refreshHandler()
+      return apiFetch<T>(path, options, newToken, true)
+    }
     throw new ApiError(response.status, body)
   }
 
@@ -39,6 +59,12 @@ export async function apiFetch<T>(
 }
 
 export interface LoginResponse {
+  access_token: string
+  refresh_token: string
+  token_type: string
+}
+
+export interface AccessTokenResponse {
   access_token: string
   token_type: string
 }
@@ -53,6 +79,20 @@ export function login(email: string, password: string): Promise<LoginResponse> {
   return apiFetch<LoginResponse>('/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
+  })
+}
+
+export function refreshAccessToken(refreshToken: string): Promise<AccessTokenResponse> {
+  return apiFetch<AccessTokenResponse>('/auth/refresh', {
+    method: 'POST',
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  })
+}
+
+export function logoutRequest(refreshToken: string): Promise<void> {
+  return apiFetch<void>('/auth/logout', {
+    method: 'POST',
+    body: JSON.stringify({ refresh_token: refreshToken }),
   })
 }
 

@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
     jwt_expires_minutes: int = 60
+    refresh_token_expires_days: int = 7
     webhook_hmac_secret: str
     frontend_origin: str = "http://localhost:5173"
 

@@ -35,7 +35,7 @@ function Home() {
   const mutation = useMutation({
     mutationFn: () => loginRequest(email, password),
     onSuccess: (data) => {
-      auth.login(data.access_token)
+      auth.login(data.access_token, data.refresh_token)
       navigate('/conversas')
     },
   })

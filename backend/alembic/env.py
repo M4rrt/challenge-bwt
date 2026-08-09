@@ -9,7 +9,7 @@ from alembic import context
 
 from app.core.config import settings
 from app.db import Base
-from app.models import conversation, message, user  # noqa: F401
+from app.models import conversation, message, refresh_token, user  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

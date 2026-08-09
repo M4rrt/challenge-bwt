@@ -45,7 +45,11 @@ describe('Home', () => {
   })
 
   it('stores the token and navigates to /conversas on success', async () => {
-    vi.mocked(login).mockResolvedValue({ access_token: 'token-123', token_type: 'bearer' })
+    vi.mocked(login).mockResolvedValue({
+      access_token: 'token-123',
+      refresh_token: 'refresh-123',
+      token_type: 'bearer',
+    })
     const user = userEvent.setup()
     renderHome()
 
@@ -55,6 +59,7 @@ describe('Home', () => {
 
     await waitFor(() => expect(screen.getByText('Conversas page')).toBeInTheDocument())
     expect(localStorage.getItem('chat-app:token')).toBe('token-123')
+    expect(localStorage.getItem('chat-app:refresh-token')).toBe('refresh-123')
   })
 
   it('shows an error message and does not navigate on invalid credentials', async () => {
