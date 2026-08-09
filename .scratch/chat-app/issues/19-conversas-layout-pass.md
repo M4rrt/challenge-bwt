@@ -15,11 +15,10 @@ Existing data-fetching, real-time socket updates, conversation creation, and log
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] `ConversasLayout` applies large lateral padding/margin around the central (message box + sidebar) area
 - [x] Sidebar width is proportional (~16%) to the central area rather than a fixed pixel value
-- [ ] Message box (`Conversa.tsx`) renders each message/group as `User_name: Message`
 - [x] "Usar webHook" link rendered outside/below the conversas screen area, linking to `/webhook`
 - [x] Existing ConversasLayout/Sidebar/Conversa tests updated for the new markup and still passing; no behavior regressions (conversation switching, sending messages, new-conversation flow, logout)
 - [x] Login form moved to `/`, replacing the placeholder Home page; `/login` route removed
