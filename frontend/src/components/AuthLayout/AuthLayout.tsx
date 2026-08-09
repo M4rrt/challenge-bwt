@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
-import WindowChrome from './WindowChrome'
+import WindowChrome from '../WindowChrome/WindowChrome'
 
 interface AuthLayoutProps {
   titlebarIcon: ReactNode

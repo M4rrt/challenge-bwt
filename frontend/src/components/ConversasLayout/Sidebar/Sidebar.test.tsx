@@ -3,12 +3,12 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { AuthProvider } from '../lib/auth/AuthContext'
-import { createConversation, getMe, listConversations, listUsers } from '../lib/api'
+import { AuthProvider } from '../../../lib/auth/AuthContext'
+import { createConversation, getMe, listConversations, listUsers } from '../../../lib/api'
 import Sidebar from './Sidebar'
 
-vi.mock('../lib/api', async () => {
-  const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api')
+vi.mock('../../../lib/api', async () => {
+  const actual = await vi.importActual<typeof import('../../../lib/api')>('../../../lib/api')
   return {
     ...actual,
     getMe: vi.fn(),

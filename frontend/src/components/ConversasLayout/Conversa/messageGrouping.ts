@@ -1,4 +1,4 @@
-import type { Message } from './api'
+import type { Message } from '../../../lib/api'
 
 export type SenderKind = 'me' | 'other' | 'external'
 

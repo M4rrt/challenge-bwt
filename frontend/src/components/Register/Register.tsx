@@ -1,42 +1,32 @@
 import type { FormEvent } from 'react'
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { Link, Navigate, useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import InputAdornment from '@mui/material/InputAdornment'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import AccountCircleIcon from '@mui/icons-material/AccountCircle'
+import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import EmailIcon from '@mui/icons-material/Email'
-import KeyIcon from '@mui/icons-material/Key'
-import LoginIcon from '@mui/icons-material/Login'
-import { ApiError, login as loginRequest } from '../lib/api'
-import { useAuth } from '../lib/auth/AuthContext'
-import AuthLayout from '../components/AuthLayout'
-import AvatarFrame from '../components/AvatarFrame'
+import LockIcon from '@mui/icons-material/Lock'
+import PersonAddIcon from '@mui/icons-material/PersonAdd'
+import PersonIcon from '@mui/icons-material/Person'
+import { ApiError, register as registerRequest } from '../../lib/api'
+import AuthLayout from '../AuthLayout/AuthLayout'
+import AvatarFrame from '../AvatarFrame/AvatarFrame'
 
-function TitlebarDots() {
-  return (
-    <Box sx={{ display: 'flex', gap: 0.75 }} aria-hidden="true">
-      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#7dd3fc' }} />
-      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#f59e0b' }} />
-    </Box>
-  )
-}
-
-function Home() {
+function Register() {
+  const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const auth = useAuth()
   const navigate = useNavigate()
 
   const mutation = useMutation({
-    mutationFn: () => loginRequest(email, password),
-    onSuccess: (data) => {
-      auth.login(data.access_token, data.refresh_token)
-      navigate('/conversas')
+    mutationFn: () => registerRequest(email, username, password),
+    onSuccess: () => {
+      navigate('/')
     },
   })
 
@@ -45,21 +35,12 @@ function Home() {
     mutation.mutate()
   }
 
-  if (auth.isAuthenticated) {
-    return <Navigate to="/conversas" replace />
-  }
-
   return (
-    <AuthLayout
-      titlebarIcon={<AccountCircleIcon fontSize="small" />}
-      titlebarTitle="Entrar no Chat-App"
-      titlebarActions={<TitlebarDots />}
-    >
+    <AuthLayout titlebarIcon={<PersonAddIcon fontSize="small" />} titlebarTitle="Criar nova conta no Chat-App">
       <AvatarFrame
         src="/logo.png"
         alt="Logo"
-        size={104}
-        showStatusDot
+        size={72}
         tooltip={
           <>
             Ícones criados por IconBaandar -{' '}
@@ -75,15 +56,39 @@ function Home() {
         }
       />
       <Typography variant="h6" component="h1" sx={{ textAlign: 'center' }}>
-        Informe suas credenciais para entrar
+        Cadastro de Novo Usuário
       </Typography>
       <Box component="form" onSubmit={handleSubmit} sx={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 2 }}>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-          <Typography component="label" htmlFor="login-email" variant="body2" sx={{ fontWeight: 700 }}>
+          <Typography component="label" htmlFor="register-username" variant="body2" sx={{ fontWeight: 700 }}>
+            Nome de Usuário (Nick do Chat-App)
+          </Typography>
+          <TextField
+            id="register-username"
+            type="text"
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            placeholder="xX_Sonhadora2007_Xx"
+            slotProps={{
+              htmlInput: { required: true },
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <PersonIcon fontSize="small" color="primary" />
+                  </InputAdornment>
+                ),
+              },
+            }}
+            size="small"
+            fullWidth
+          />
+        </Box>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+          <Typography component="label" htmlFor="register-email" variant="body2" sx={{ fontWeight: 700 }}>
             E-mail
           </Typography>
           <TextField
-            id="login-email"
+            id="register-email"
             type="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
@@ -103,21 +108,21 @@ function Home() {
           />
         </Box>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-          <Typography component="label" htmlFor="login-password" variant="body2" sx={{ fontWeight: 700 }}>
+          <Typography component="label" htmlFor="register-password" variant="body2" sx={{ fontWeight: 700 }}>
             Senha
           </Typography>
           <TextField
-            id="login-password"
+            id="register-password"
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            placeholder="Digite sua senha"
+            placeholder="Crie uma senha segura"
             slotProps={{
               htmlInput: { required: true },
               input: {
                 startAdornment: (
                   <InputAdornment position="start">
-                    <KeyIcon fontSize="small" color="primary" />
+                    <LockIcon fontSize="small" color="primary" />
                   </InputAdornment>
                 ),
               },
@@ -126,22 +131,24 @@ function Home() {
             fullWidth
           />
         </Box>
-        <Button type="submit" variant="contained" fullWidth startIcon={<LoginIcon />} disabled={mutation.isPending}>
-          Entrar
+        <Button type="submit" variant="contained" fullWidth startIcon={<CheckCircleIcon />} disabled={mutation.isPending}>
+          Concluir Cadastro
         </Button>
         {mutation.isError && (
           <Alert severity="error">
-            {mutation.error instanceof ApiError && mutation.error.status === 401
-              ? 'Credenciais inválidas'
-              : 'Não foi possível conectar ao servidor'}
+            {mutation.error instanceof ApiError && mutation.error.status === 409
+              ? 'Email já cadastrado'
+              : mutation.error instanceof ApiError && mutation.error.status === 422
+                ? 'Senha deve ter pelo menos 8 caracteres, com maiúscula, minúscula e um número ou símbolo'
+                : 'Não foi possível conectar ao servidor'}
           </Alert>
         )}
       </Box>
       <Typography variant="body2">
-        Ainda não possui uma conta? <Link to="/register">Cadastre-se aqui</Link>
+        Já possui uma conta no Chat-App? <Link to="/">Ir para Tela de Login</Link>
       </Typography>
     </AuthLayout>
   )
 }
 
-export default Home
+export default Register

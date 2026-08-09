@@ -1,13 +1,19 @@
 import { useEffect } from 'react'
-import { API_URL, toWsUrl } from './api'
+import { API_URL, toWsUrl } from '../../../lib/api'
 
-interface UseUserSocketOptions {
+interface UseConversationSocketOptions {
+  conversationId: string
   token: string | undefined
-  onMessage: () => void
+  onMessage: (data: string) => void
   reconnectDelayMs?: number
 }
 
-export function useUserSocket({ token, onMessage, reconnectDelayMs = 2000 }: UseUserSocketOptions): void {
+export function useConversationSocket({
+  conversationId,
+  token,
+  onMessage,
+  reconnectDelayMs = 2000,
+}: UseConversationSocketOptions): void {
   useEffect(() => {
     if (!token) {
       return
@@ -18,9 +24,9 @@ export function useUserSocket({ token, onMessage, reconnectDelayMs = 2000 }: Use
     let reconnectTimer: ReturnType<typeof setTimeout>
 
     function connect() {
-      const url = `${toWsUrl(API_URL)}/websocket/users/me?token=${token}`
+      const url = `${toWsUrl(API_URL)}/websocket/conversations/${conversationId}?token=${token}`
       socket = new WebSocket(url)
-      socket.onmessage = () => onMessage()
+      socket.onmessage = (event) => onMessage(event.data)
       socket.onclose = () => {
         if (!deliberateClose) {
           reconnectTimer = setTimeout(connect, reconnectDelayMs)
@@ -39,5 +45,5 @@ export function useUserSocket({ token, onMessage, reconnectDelayMs = 2000 }: Use
         socket.addEventListener('open', () => socket.close(), { once: true })
       }
     }
-  }, [token, onMessage, reconnectDelayMs])
+  }, [conversationId, token, onMessage, reconnectDelayMs])
 }

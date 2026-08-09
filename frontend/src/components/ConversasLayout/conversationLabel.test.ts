@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Conversation } from './api'
+import type { Conversation } from '../../lib/api'
 import { conversationLabel } from './conversationLabel'
 
 function makeConversation(overrides: Partial<Conversation>): Conversation {

@@ -17,11 +17,11 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import SendIcon from '@mui/icons-material/Send'
 import SmartToyIcon from '@mui/icons-material/SmartToy'
 import TagIcon from '@mui/icons-material/Tag'
-import { ApiError, type Message, getMe, sendWebhookMessage } from '../lib/api'
-import { useAuth } from '../lib/auth/AuthContext'
-import { signWebhookBody } from '../lib/webhookSignature'
-import AvatarFrame from '../components/AvatarFrame'
-import WindowChrome from '../components/WindowChrome'
+import { ApiError, type Message, getMe, sendWebhookMessage } from '../../lib/api'
+import { useAuth } from '../../lib/auth/AuthContext'
+import { signWebhookBody } from './webhookSignature'
+import AvatarFrame from '../AvatarFrame/AvatarFrame'
+import WindowChrome from '../WindowChrome/WindowChrome'
 
 function errorDetail(error: unknown): string {
   if (error instanceof ApiError) {

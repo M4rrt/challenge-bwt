@@ -8,7 +8,7 @@ import MenuIcon from '@mui/icons-material/Menu'
 import { useTheme } from '@mui/material/styles'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import { Link as RouterLink, Outlet, useParams } from 'react-router-dom'
-import Sidebar from './Sidebar'
+import Sidebar from './Sidebar/Sidebar'
 
 function ConversasLayout() {
   const theme = useTheme()

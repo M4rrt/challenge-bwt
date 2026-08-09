@@ -1,4 +1,4 @@
-import type { Conversation } from './api'
+import type { Conversation } from '../../lib/api'
 
 export function conversationLabel(
   conversation: Conversation,
