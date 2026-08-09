@@ -57,6 +57,7 @@ services:
       JWT_SECRET_KEY: change-me
       WEBHOOK_HMAC_SECRET: change-me
       FRONTEND_ORIGIN: http://localhost:5173
+      PYTHONDONTWRITEBYTECODE: 1
     ports:
       - "8000:8000"
     volumes:
