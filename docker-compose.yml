@@ -1,3 +1,11 @@
+# TEMPORARY: db/redis host ports are 5545/6381 instead of the standard
+# 5544/6380, because orphaned root-owned docker-proxy processes (PIDs
+# 167318/167324/167346/167352, running since before this change) are still
+# holding 5544/6380 on the host with no live container behind them. Revert
+# to "5544:5432" / "6380:6379" once those are killed
+# (`sudo kill -9 167318 167324 167346 167352` or `sudo systemctl restart
+# docker`) — and update backend/.env(.example) DATABASE_URL/REDIS_URL back
+# to match if they were changed for local (non-Docker) runs in the meantime.
 services:
   db:
     image: postgres:16-alpine
@@ -6,7 +14,7 @@ services:
       POSTGRES_PASSWORD: chat
       POSTGRES_DB: chat
     ports:
-      - "5544:5432"
+      - "5545:5432"
     volumes:
       - chat_db_data:/var/lib/postgresql/data
     healthcheck:
@@ -18,7 +26,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6380:6379"
+      - "6381:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
