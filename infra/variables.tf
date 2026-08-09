@@ -123,3 +123,9 @@ variable "frontend_origin" {
   type        = string
   default     = "http://localhost:5173"
 }
+
+variable "domain_name" {
+  description = "Domain name the frontend (via CloudFront) and ALB are reachable under. Placeholder default — replace with a real, registered domain before applying against real AWS."
+  type        = string
+  default     = "chat-app.example.com"
+}

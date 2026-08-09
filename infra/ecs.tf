@@ -148,5 +148,11 @@ resource "aws_ecs_service" "backend" {
     container_port   = var.backend_container_port
   }
 
+  # Once autoscaling.tf's target-tracking policies adjust the running count, a plain `apply`
+  # must not fight them back down to var.backend_desired_count.
+  lifecycle {
+    ignore_changes = [desired_count]
+  }
+
   depends_on = [aws_lb_listener.http]
 }

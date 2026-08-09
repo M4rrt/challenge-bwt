@@ -32,3 +32,24 @@ output "redis_endpoint" {
   description = "Connection endpoint (host:port) of the ElastiCache Redis cluster."
   value       = "${aws_elasticache_cluster.redis.cache_nodes[0].address}:${aws_elasticache_cluster.redis.cache_nodes[0].port}"
 }
+
+output "frontend_bucket" {
+  description = "Name of the S3 bucket to sync the frontend build output (frontend/dist) to."
+  value       = aws_s3_bucket.frontend.id
+}
+
+output "cloudfront_distribution_id" {
+  description = "ID of the CloudFront distribution fronting the frontend bucket — needed to invalidate its cache after a deploy."
+  value       = aws_cloudfront_distribution.frontend.id
+}
+
+output "cloudfront_domain_name" {
+  description = "CloudFront distribution's own domain name (*.cloudfront.net), reachable before/without custom DNS."
+  value       = aws_cloudfront_distribution.frontend.domain_name
+}
+
+output "route53_name_servers" {
+  description = "Name servers for the Route53 hosted zone — point the registrar for var.domain_name at these to make DNS live."
+  value       = aws_route53_zone.main.name_servers
+}
+
