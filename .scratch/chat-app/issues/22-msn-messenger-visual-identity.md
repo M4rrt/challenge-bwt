@@ -45,13 +45,21 @@ Build as:
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] `theme.ts` defines the MSN Messenger-inspired palette, typography, and component overrides
-- [ ] Reusable window-chrome and avatar-frame components exist and are used by `AuthLayout` and `WebhookTestPage`
-- [ ] Login screen matches the reference above (titlebar copy, avatar+status dot, credential-themed labels, "remember me" checkbox, footer link to Register)
-- [ ] Register screen matches the reference above (titlebar copy, avatar without status dot, nick-themed username label, footer link to Login)
-- [ ] Webhook test page matches the reference above (full-width layout, titlebar with back action, connected-user chip, highlighted disclaimer, restyled submit button, footer back-action)
-- [ ] Webhook test page keeps the conversation-id field as free text (no dropdown/data-fetch) and keeps showing only the latest result (no persistent log) — deliberate divergences from the prototype
-- [ ] Existing Login/Register/WebhookTestPage tests still pass (updated for new markup as needed); no change to `lib/api.ts`, auth flow, or webhook signing/submission behavior
-- [ ] `npm run build` and `npm run lint` pass in `frontend/` with no new errors
+- [x] `theme.ts` defines the MSN Messenger-inspired palette, typography, and component overrides
+- [x] Reusable window-chrome and avatar-frame components exist and are used by `AuthLayout` and `WebhookTestPage`
+- [x] Login screen matches the reference above (titlebar copy, avatar+status dot, credential-themed labels, footer link to Register) — "remember me" checkbox dropped, see Comments
+- [x] Register screen matches the reference above (titlebar copy, avatar without status dot, nick-themed username label, footer link to Login)
+- [x] Webhook test page matches the reference above (full-width layout, titlebar with back action, connected-user chip, highlighted disclaimer, restyled submit button, footer back-action)
+- [x] Webhook test page keeps the conversation-id field as free text (no dropdown/data-fetch) and keeps showing only the latest result (no persistent log) — deliberate divergences from the prototype
+- [x] Existing Login/Register/WebhookTestPage tests still pass (updated for new markup as needed); no change to `lib/api.ts`, auth flow, or webhook signing/submission behavior
+- [x] `npm run build` and `npm run lint` pass in `frontend/` with no new errors
+
+## Comments
+
+Literal MSN/Windows branding text from the prototype (titlebar copy, "(Windows Live ID)" label, etc.) was intentionally not ported — same no-MSN-branding rule already applied elsewhere in this project. Only the structural/palette identity (window chrome, avatar frame, sky-blue palette) was carried over.
+
+The "Lembrar minhas credenciais" checkbox from the Login checklist was dropped: there's no backend support for persisting a remembered-credentials preference, so it would be inert UI with no behavior behind it — same precedent as other decorative, backend-less elements excluded in prior tickets (e.g. ticket 19's nudge button, presence status, compose-toolbar icons).
+
+Verified: `npm install` (picked up the `jose` dependency added by ticket 24, previously uninstalled in this checkout), `tsc -b && vite build` clean, `oxlint` clean (one pre-existing unrelated warning in `AuthContext.tsx`), `npx vitest run` 91/91 passing.
