@@ -12,3 +12,6 @@ override.tf.json
 .terraformrc
 terraform.rc
 backend.hcl
+
+# DrawIO editor lock/backup files
+.$*.drawio.bkp

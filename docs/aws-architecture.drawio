@@ -1,0 +1,201 @@
+<mxfile host="Electron" agent="ChatGPT">
+  <diagram id="aws-architecture" name="AWS Architecture">
+    <mxGraphModel dx="2020" dy="1204" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1300" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="regional" parent="1" style="rounded=1;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;fillColor=#F7F2FF;strokeColor=#9B7BC2;strokeWidth=2;fontSize=16;fontStyle=1;align=center;verticalAlign=top;spacingTop=10;spacingLeft=12;" value="Regional AWS services" vertex="1">
+          <mxGeometry height="360" width="340" x="1890" y="70" as="geometry" />
+        </mxCell>
+        <mxCell id="ecr" parent="regional" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E6;strokeColor=#FF9900;fontSize=14;fontStyle=1;" value="ECR repository&#xa;aws_ecr_repository.backend" vertex="1">
+          <mxGeometry height="75" width="220" x="70" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="cw" parent="regional" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E6;strokeColor=#FF9900;fontSize=14;fontStyle=1;" value="CloudWatch Log Group" vertex="1">
+          <mxGeometry height="75" width="220" x="40" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="control" parent="1" style="rounded=1;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;fillColor=#FFFDF4;strokeColor=#C9A227;strokeWidth=2;fontSize=16;fontStyle=1;align=left;verticalAlign=top;spacingTop=10;spacingLeft=12;" value="IAM / SSM / Autoscaling" vertex="1">
+          <mxGeometry height="280" width="510" x="1050" y="840" as="geometry" />
+        </mxCell>
+        <mxCell id="iam" parent="control" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E6;strokeColor=#FF9900;fontSize=14;fontStyle=1;" value="IAM role&#xa;ECS task execution" vertex="1">
+          <mxGeometry height="70" width="180" x="285" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="ssm" parent="control" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E6;strokeColor=#FF9900;fontSize=14;fontStyle=1;" value="SSM Parameters&#xa;SecureString ×4" vertex="1">
+          <mxGeometry height="70" width="180" x="40" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="autoscale" parent="control" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E6;strokeColor=#FF9900;fontSize=14;fontStyle=1;" value="Application Auto Scaling&#xa;target + CPU/memory policies" vertex="1">
+          <mxGeometry height="70" width="180" x="260" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="vpc" parent="1" style="rounded=1;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;fillColor=#F7F7F7;strokeColor=#87909B;strokeWidth=2;dashed=1;fontSize=16;fontStyle=1;align=center;verticalAlign=top;spacingTop=10;spacingLeft=12;" value="VPC — aws_vpc.main" vertex="1">
+          <mxGeometry height="560" width="970" x="860" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="private" parent="vpc" style="rounded=1;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;fillColor=#F3FAF3;strokeColor=#78A878;dashed=1;fontSize=15;fontStyle=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=10;" value="Private subnets" vertex="1">
+          <mxGeometry height="210" width="600" x="25" y="295" as="geometry" />
+        </mxCell>
+        <mxCell id="rds" parent="private" style="shape=cylinder;whiteSpace=wrap;html=1;fillColor=#FFF3E6;strokeColor=#FF9900;strokeWidth=2;fontSize=15;fontStyle=1;" value="RDS PostgreSQL&#xa;aws_db_instance.postgres" vertex="1">
+          <mxGeometry height="135" width="235" x="35" y="45" as="geometry" />
+        </mxCell>
+        <mxCell id="redis" parent="private" style="shape=cylinder;whiteSpace=wrap;html=1;fillColor=#FFF3E6;strokeColor=#FF9900;strokeWidth=2;fontSize=15;fontStyle=1;" value="ElastiCache Redis&#xa;aws_elasticache_cluster.redis" vertex="1">
+          <mxGeometry height="150" width="235" x="330" y="35" as="geometry" />
+        </mxCell>
+        <mxCell id="public" parent="vpc" style="rounded=1;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;fillColor=#EEF7FF;strokeColor=#6EA8DC;dashed=1;fontSize=15;fontStyle=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=10;" value="Public subnets" vertex="1">
+          <mxGeometry height="210" width="600" x="25" y="55" as="geometry" />
+        </mxCell>
+        <mxCell id="alb" parent="public" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E6;strokeColor=#FF9900;strokeWidth=2;fontSize=15;fontStyle=1;" value="Application Load Balancer&#xa;aws_lb.main" vertex="1">
+          <mxGeometry height="80" width="235" x="35" y="75" as="geometry" />
+        </mxCell>
+        <mxCell id="ecs" parent="public" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E6;strokeColor=#FF9900;strokeWidth=2;fontSize=15;fontStyle=1;" value="ECS Service (backend)&#xa;Fargate tasks" vertex="1">
+          <mxGeometry height="80" width="235" x="330" y="75" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" edge="1" parent="vpc" source="autoscale" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;dashed=1;strokeColor=#6B7280;endArrow=block;endFill=1;entryX=1;entryY=0.75;entryDx=0;entryDy=0;exitX=0.5;exitY=0;exitDx=0;exitDy=0;" target="ecs" value="adjusts desired count">
+          <mxGeometry relative="1" x="0.1487" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="540" y="600" />
+              <mxPoint x="740" y="600" />
+              <mxPoint x="740" y="190" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="vpc" source="iam" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;dashed=1;strokeColor=#6B7280;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" target="ecr" value="pulls image">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="660" y="840" />
+              <mxPoint x="1210" y="840" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=24;fontStyle=1;fontColor=#232F3E;" value="AWS Architecture" vertex="1">
+          <mxGeometry height="40" width="500" x="40" y="25" as="geometry" />
+        </mxCell>
+        <mxCell id="browser" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#5B6573;strokeWidth=2;fontSize=14;fontStyle=1;" value="Browser" vertex="1">
+          <mxGeometry height="65" width="150" x="40" y="690" as="geometry" />
+        </mxCell>
+        <mxCell id="edgeGroup" parent="1" style="rounded=1;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;fillColor=#F5F9FF;strokeColor=#7AA7D9;strokeWidth=2;fontSize=16;fontStyle=1;align=center;verticalAlign=top;spacingTop=10;spacingLeft=12;" value="Global edge / frontend" vertex="1">
+          <mxGeometry height="560" width="530" x="210" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="r53" parent="edgeGroup" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E7;strokeColor=#E8A317;fontSize=14;fontStyle=1;" value="Route53 zone&#xa;aws_route53_zone.main" vertex="1">
+          <mxGeometry height="65" width="190" x="30" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="acm" parent="edgeGroup" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E7;strokeColor=#E8A317;fontSize=14;fontStyle=1;" value="ACM certificate (us-east-1)&#xa;aws_acm_certificate.frontend" vertex="1">
+          <mxGeometry height="65" width="235" x="250" y="55" as="geometry" />
+        </mxCell>
+        <mxCell id="cf" parent="edgeGroup" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E6;strokeColor=#FF9900;strokeWidth=2;fontSize=14;fontStyle=1;" value="CloudFront distribution&#xa;aws_cloudfront_distribution.frontend" vertex="1">
+          <mxGeometry height="80" width="260" x="20" y="400" as="geometry" />
+        </mxCell>
+        <mxCell id="s3" parent="edgeGroup" style="shape=cylinder;whiteSpace=wrap;html=1;fillColor=#FFF3E6;strokeColor=#FF9900;strokeWidth=2;fontSize=14;fontStyle=1;" value="S3 bucket (frontend)&#xa;aws_s3_bucket.frontend" vertex="1">
+          <mxGeometry height="105" width="190" x="310" y="160" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="edgeGroup" source="cf" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0.528;entryY=1.002;exitDx=0;exitDy=0;entryDx=0;entryDy=0;entryPerimeter=0;" target="s3" value="origin fetch, SigV4-signed via OAC">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="410.03" y="440.03" />
+            </Array>
+            <mxPoint x="130" y="330" as="sourcePoint" />
+            <mxPoint x="350" y="250" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e11" edge="1" parent="edgeGroup" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;dashed=1;strokeColor=#6B7280;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.318;entryY=-0.017;entryDx=0;entryDy=0;entryPerimeter=0;" target="cf" value="alias: domain_name">
+          <mxGeometry relative="1" x="-0.4826" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="137.5" y="140.04" />
+              <mxPoint x="102.71" y="140" />
+            </Array>
+            <mxPoint x="137.5" y="125" as="sourcePoint" />
+            <mxPoint x="90" y="170" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="note" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#E67E22;fontSize=13;fontColor=#8A4B08;" value="Readability: edge labels have opaque backgrounds; the orange path is the known HTTP mixed-content gap." vertex="1">
+          <mxGeometry height="90" width="350" x="420" y="820" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="browser" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitDx=0;exitDy=0;" target="cf" value="HTTPS, static assets&#xa;via domain_name">
+          <mxGeometry relative="1" x="-0.1723" y="-2" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="115" y="580" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="browser" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#E67E22;strokeWidth=4;endArrow=block;endFill=1;labelBackgroundColor=#FFFFFF;labelBorderColor=#D0D0D0;fontColor=#B85C00;fontStyle=1;labelBackgroundColor=#FFF7ED;labelBorderColor=#E67E22;exitX=1;exitY=0.5;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="alb" value="REST + WebSocket, http://api.domain_name&#xa;cross-origin, HTTP-only — KNOWN GAP">
+          <mxGeometry relative="1" x="-0.0712" y="-2" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="190" y="740" />
+              <mxPoint x="780" y="740" />
+              <mxPoint x="780" y="300" />
+            </Array>
+            <mxPoint x="590" y="380" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="alb" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;endArrow=block;endFill=1;exitX=0.75;exitY=0;exitDx=0;exitDy=0;" target="ecs" value="HTTP :backend_container_port">
+          <mxGeometry relative="1" x="0.05" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="1096.33" y="210" />
+              <mxPoint x="1220" y="210" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;endArrow=block;endFill=1;entryX=0.5;entryY=0;" target="rds" value=":5432">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1240" y="340" />
+              <mxPoint x="1240" y="405" />
+              <mxPoint x="987.5" y="405" />
+            </Array>
+            <mxPoint x="1240" y="340" as="sourcePoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="ecs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="redis" value=":6379">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="iam" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;dashed=1;strokeColor=#6B7280;endArrow=block;endFill=1;" target="ssm" value="ssm:GetParameters + kms:Decrypt">
+          <mxGeometry relative="1" y="10" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="1430" y="970" />
+              <mxPoint x="1150" y="970" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="ecs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;dashed=1;strokeColor=#6B7280;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="cw" value="writes logs (awslogs)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" edge="1" parent="1" source="r53" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;dashed=1;strokeColor=#6B7280;endArrow=block;endFill=1;exitX=0.48;exitY=-0.008;entryX=0.5;entryY=0;exitDx=0;exitDy=0;exitPerimeter=0;entryDx=0;entryDy=0;" target="alb" value="alias: api.domain_name">
+          <mxGeometry relative="1" x="-0.1004" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="331.17" y="170" />
+              <mxPoint x="1037.5" y="170" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e13" edge="1" parent="1" source="acm" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;dashed=1;strokeColor=#6B7280;endArrow=block;endFill=1;exitX=0.166;exitY=1.036;exitDx=0;exitDy=0;exitPerimeter=0;" value="TLS cert">
+          <mxGeometry relative="1" x="-0.2655" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="519" y="260" />
+              <mxPoint x="520" y="260" />
+              <mxPoint x="520" y="330" />
+              <mxPoint x="350" y="330" />
+              <mxPoint x="350" y="530.3" />
+            </Array>
+            <mxPoint x="350" y="530" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="legend" parent="1" style="rounded=1;fillColor=#FFFFFF;strokeColor=#A0A0A0;fontSize=15;fontStyle=1;align=center;labelBackgroundColor=none;html=1;whiteSpace=wrap;verticalAlign=top;" value="Legend" vertex="1">
+          <mxGeometry height="150" width="340" x="40" y="820" as="geometry" />
+        </mxCell>
+        <mxCell id="leg1" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=14;" value="Solid = runtime/data flow" vertex="1">
+          <mxGeometry height="25" width="290" x="60" y="850" as="geometry" />
+        </mxCell>
+        <mxCell id="leg2" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=14;" value="Dashed = control/configuration" vertex="1">
+          <mxGeometry height="25" width="290" x="60" y="875" as="geometry" />
+        </mxCell>
+        <mxCell id="leg3" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=14;fontColor=#B85C00;" value="Orange thick edge = known mixed-content gap" vertex="1">
+          <mxGeometry height="40" width="300" x="60" y="890" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
