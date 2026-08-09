@@ -39,7 +39,11 @@ export function useConversationSocket({
     return () => {
       deliberateClose = true
       clearTimeout(reconnectTimer)
-      socket.close()
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.close()
+      } else if (socket.readyState === WebSocket.CONNECTING) {
+        socket.addEventListener('open', () => socket.close(), { once: true })
+      }
     }
   }, [conversationId, token, onMessage, reconnectDelayMs])
 }

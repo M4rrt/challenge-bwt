@@ -33,7 +33,11 @@ export function useUserSocket({ token, onMessage, reconnectDelayMs = 2000 }: Use
     return () => {
       deliberateClose = true
       clearTimeout(reconnectTimer)
-      socket.close()
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.close()
+      } else if (socket.readyState === WebSocket.CONNECTING) {
+        socket.addEventListener('open', () => socket.close(), { once: true })
+      }
     }
   }, [token, onMessage, reconnectDelayMs])
 }
