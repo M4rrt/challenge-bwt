@@ -28,9 +28,23 @@ tests/
 
 ## Running locally
 
+**With Docker (recommended):**
+
+From the repo root: `docker compose up`
+
+This builds and starts Postgres, Redis, the backend (with hot-reload), and the frontend together. The backend runs migrations automatically on startup, then serves at `http://localhost:8000`. Health check: `curl http://localhost:8000/health`.
+
+Editing any file under `app/` or `alembic/` is picked up immediately (no rebuild, no restart) — the container bind-mounts these directories and Uvicorn watches them with `--reload`.
+
+Two exceptions:
+- **Dependency changes** (`pyproject.toml`/`uv.lock`): run `docker compose build backend` (or `docker compose up --build`) to reinstall.
+- **New Alembic migration**: run `docker compose restart backend` to re-run `alembic upgrade head` (migrations only run once at container start).
+
+**Without Docker:**
+
 1. Install [`uv`](https://docs.astral.sh/uv/) if you don't have it: `curl -LsSf https://astral.sh/uv/install.sh | sh`
 2. Copy the env file and adjust if needed: `cp .env.example .env`
-3. Start Postgres + Redis: `docker compose up -d`
+3. Start Postgres + Redis: `docker compose -f ../docker-compose.yml up -d db redis`
 4. Install dependencies: `uv sync`
 5. Apply migrations: `uv run alembic upgrade head`
 6. Run the API: `uv run uvicorn app.main:app --reload`
