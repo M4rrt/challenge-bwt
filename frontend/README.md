@@ -18,7 +18,7 @@ From the repo root: `docker compose up`
 
 This builds and starts the frontend (with HMR) alongside the backend, Postgres, and Redis. The frontend serves at `http://localhost:5173`.
 
-Editing any file under `src/` is picked up immediately via Vite's HMR — no rebuild, no restart. Adding a new dependency to `package.json` requires `docker compose build frontend` (or `docker compose up --build`) to reinstall.
+Editing any file under `src/` is picked up immediately via Vite's HMR — no rebuild, no restart. Adding a new dependency to `package.json` requires clearing the `node_modules` volume before rebuilding, since Docker only seeds a named volume from the image once — `docker compose down -v` then `docker compose up --build` (or `docker volume rm <project>_frontend_node_modules` before rebuilding).
 
 **Without Docker:**
 

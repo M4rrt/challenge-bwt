@@ -5,7 +5,8 @@
 # to "5544:5432" / "6380:6379" once those are killed
 # (`sudo kill -9 167318 167324 167346 167352` or `sudo systemctl restart
 # docker`) — and update backend/.env(.example) DATABASE_URL/REDIS_URL back
-# to match if they were changed for local (non-Docker) runs in the meantime.
+# to match if they were changed for local (non-Docker) runs in the meantime,
+# specifically backend/.env.example's DATABASE_URL/REDIS_URL.
 services:
   db:
     image: postgres:16-alpine
@@ -38,6 +39,7 @@ services:
       context: ./frontend
     environment:
       VITE_API_URL: http://localhost:8000
+      VITE_WEBHOOK_TEST_SECRET: change-me
     ports:
       - "5173:5173"
     volumes:
@@ -48,7 +50,7 @@ services:
     build:
       context: ./backend
       target: builder
-    command: sh -c "uv run alembic upgrade head && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    command: sh -c "uv run --no-sync alembic upgrade head && uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     environment:
       DATABASE_URL: postgresql+asyncpg://chat:chat@db:5432/chat
       REDIS_URL: redis://redis:6379/0
