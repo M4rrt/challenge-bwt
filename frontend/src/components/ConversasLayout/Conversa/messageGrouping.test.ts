@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Message } from './api'
+import type { Message } from '../../../lib/api'
 import { groupMessages } from './messageGrouping'
 
 function makeMessage(overrides: Partial<Message>): Message {
