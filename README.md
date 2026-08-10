@@ -49,5 +49,13 @@ Lista completa de itens deferidos em [`docs/decisions.md`](docs/decisions.md#def
   - Sem tiebreaker de ordenação de mensagens além de `created_at`.
   - Refresh token sem rotação no uso — fica válido até expirar ou logout explícito.
   - Logout não fecha WebSockets já abertos com o token antigo — token JWT é stateless e não tem revogação server-side.
+  - Token de acesso trafega como query param (`?token=`) no handshake WebSocket, não como header — tende a ficar gravado em logs de acesso de proxies/ALB e em histórico do navegador. Não documentado como trade-off em nenhum ADR; a alternativa seria conectar sem token e autenticar pela primeira mensagem do socket.
 - **Ordem de participantes não é uma garantia formal.** A resposta de conversas retorna participantes ordenados por `user_id`, mas isso hoje é efeito colateral do plano de execução do Postgres sobre o índice único composto de `conversation_participants` (confirmado ao investigar o RED de um teste no ticket 23), não uma garantia de SQL/SQLAlchemy — um `ORDER BY` explícito seria o fix correto antes de depender disso.
+- **Débito de performance e resiliência no backend, ainda não priorizado:**
+  - Sem índice em `messages.conversation_id` — `list_messages` e a busca da última mensagem por conversa fazem table scan à medida que o histórico cresce.
+  - O índice único de `conversation_participants` (`conversation_id, user_id`) favorece a checagem de membership, não `list_conversations` — que roda a cada carregamento da sidebar e filtra só por `user_id`.
+  - Sem rate limiting em `/auth/login`, `/auth/register` e `/webhook/messages`.
+  - Sem paginação em nenhuma listagem (`GET /conversations`, `GET /conversations/{id}/messages`, `GET /users`) — todas devolvem o conjunto inteiro.
+  - O subscriber Redis (`run_subscriber`) não tem retry nem log se a conexão cair — a entrega em tempo real para silenciosamente até o processo reiniciar.
+- **Frontend sem camada de hooks de dados dedicada.** As query keys do TanStack Query são reescritas à mão em cada rota; centralizar isso e gerar o client TypeScript a partir do OpenAPI que o FastAPI já expõe eliminaria uma classe inteira de bugs de drift entre os schemas Pydantic e as interfaces TS mantidas manualmente em `frontend/src/lib/api.ts`.
 - **Gaps de infra conhecidos** (ver [`infra/README.md`](infra/README.md)): NAT Gateway não provisionado (custo sem uso real no desenho atual), e o ALB permanece HTTP-only mesmo com o frontend em TLS via CloudFront.

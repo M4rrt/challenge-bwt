@@ -1,37 +1,37 @@
-# frontend
+# Frontend
 
-React SPA (Vite + TypeScript) for chat-app.
+SPA em React (Vite + TypeScript) do chat-app.
 
 ## Stack
 
 - Vite + React + TypeScript
-- TanStack Query for server state
-- React Router for routing (active conversation lives in the URL, no global store)
+- TanStack Query para estado de servidor
+- React Router para roteamento (a conversa ativa vive na URL, sem store global)
 
-See `docs/decisions.md` in the repo root for the reasoning behind these choices.
+Veja `docs/decisions.md` na raiz do repositório para o raciocínio por trás dessas escolhas.
 
-## Running locally
+## Rodando localmente
 
-**With Docker (recommended):**
+**Com Docker (recomendado):**
 
-From the repo root: `docker compose up`
+Na raiz do repositório: `docker compose up`
 
-This builds and starts the frontend (with HMR) alongside the backend, Postgres, and Redis. The frontend serves at `http://localhost:5173`.
+Isso builda e sobe o frontend (com HMR) junto com backend, Postgres e Redis. O frontend serve em `http://localhost:5173`.
 
-Editing any file under `src/` is picked up immediately via Vite's HMR — no rebuild, no restart. Adding a new dependency to `package.json` requires clearing the `node_modules` volume before rebuilding, since Docker only seeds a named volume from the image once — `docker compose down -v` then `docker compose up --build` (or `docker volume rm <project>_frontend_node_modules` before rebuilding).
+Editar qualquer arquivo em `src/` é refletido imediatamente via HMR do Vite — sem rebuild, sem restart. Adicionar uma nova dependência em `package.json` exige limpar o volume `node_modules` antes de rebuildar, já que o Docker só popula um volume nomeado a partir da imagem uma vez — `docker compose down -v` e depois `docker compose up --build` (ou `docker volume rm <project>_frontend_node_modules` antes de rebuildar).
 
-**Without Docker:**
+**Sem Docker:**
 
-1. Copy the env file and adjust if needed: `cp .env.example .env`
-2. Install dependencies: `npm install`
-3. Run the dev server: `npm run dev`
+1. Copie o arquivo de env e ajuste se precisar: `cp .env.example .env`
+2. Instale as dependências: `npm install`
+3. Rode o dev server: `npm run dev`
 
-The dev server runs at `http://localhost:5173`.
+O dev server roda em `http://localhost:5173`.
 
-## Environment variables
+## Variáveis de ambiente
 
-- `VITE_API_URL` — base URL of the backend API.
-- `VITE_WEBHOOK_TEST_SECRET` — must match the backend's `WEBHOOK_HMAC_SECRET` for the `/webhook` test page (see `docs/adr/0005-client-side-hmac-webhook-test-page.md` in the repo root) to sign requests correctly. Test-page-only: this secret ships in the frontend bundle, so never set it to a real production secret. Do not commit a real value here — `.env` is gitignored.
+- `VITE_API_URL` — URL base da API do backend.
+- `VITE_WEBHOOK_TEST_SECRET` — precisa bater com o `WEBHOOK_HMAC_SECRET` do backend para a página de teste `/webhook` (ver `docs/adr/0005-client-side-hmac-webhook-test-page.md` na raiz do repositório) assinar as requisições corretamente. Uso exclusivo da página de teste: esse segredo vai junto no bundle do frontend, então nunca configure com um segredo real de produção. Não commite um valor real aqui — `.env` está no `.gitignore`.
 
 ## Build
 
@@ -39,12 +39,24 @@ The dev server runs at `http://localhost:5173`.
 npm run build
 ```
 
-Type-checks with `tsc -b` and outputs a production bundle to `dist/`.
+Faz type-check com `tsc -b` e gera um bundle de produção em `dist/`.
 
-## Tests
+## Comportamentos conhecidos
+
+- **Mensagens de webhook agrupadas por `source_label`.** Quando `sender_id` é nulo (mensagem trazida por `POST /webhook/messages`), a lista de mensagens agrupa bolhas consecutivas por `source_label` em vez de `sender_id` — sem isso, mensagens de remetentes externos diferentes apareciam sob uma única bolha.
+- **Fallback explícito enquanto a identidade do usuário carrega.** A tela de conversa depende de duas queries assíncronas (usuário atual + lista de conversas); antes de ambas resolverem, o nome do participante mostrado usa um fallback explícito de "identidade ainda não conhecida" em vez de arriscar mostrar o participante errado.
+
+## Débito técnico conhecido
+
+- **Sem camada de hooks de dados dedicada.** `useQuery`/`useMutation` são chamados soltos em cada rota (`src/routes/`), cada uma reescrevendo a query key na mão (`['conversations']`, `['messages', conversationId]`, `['me']`, `['users']`). Um typo numa key quebra a invalidação de cache silenciosamente, sem checagem do compilador — centralizar isso em algo como `src/lib/queries/` fecharia essa lacuna.
+- **Contrato de API mantido à mão.** As interfaces TypeScript em `src/lib/api.ts` são reescritas manualmente a partir dos schemas Pydantic do backend, sem geração automática a partir do OpenAPI que o FastAPI já expõe. Uma mudança de schema no backend não quebra o build do frontend — só quebra em runtime, silenciosamente.
+
+## Testes
 
 ```bash
 npm run test
 ```
 
-Runs the Vitest + React Testing Library suite.
+Roda a suíte de Vitest + React Testing Library.
+
+**Lacuna conhecida:** o drawer mobile da lista de conversas (`ConversasLayout`) não tem cobertura de teste automatizada própria — verificação manual apenas, por decisão explícita ao escopo daquele ticket.

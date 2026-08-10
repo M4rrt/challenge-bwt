@@ -1,24 +1,26 @@
 # Infra
 
-Terraform for the AWS resources this app runs on: ECS/Fargate (backend), RDS Postgres, ElastiCache Redis,
-networking (VPC, ALB), CloudFront/S3 (frontend), Route53/ACM (DNS/TLS), Application Auto Scaling, IAM, and
-remote state (S3 + DynamoDB, provisioned separately by `infra/bootstrap/`). One flat state, no modules —
-every resource lives in a `.tf` file named after the resource type it provisions (`network.tf`, `ecs.tf`,
+Terraform para os recursos AWS em que esta aplicação roda: ECS/Fargate (backend), RDS Postgres, ElastiCache Redis,
+rede (VPC, ALB), CloudFront/S3 (frontend), Route53/ACM (DNS/TLS), Application Auto Scaling, IAM, e
+state remoto (S3 + DynamoDB, provisionado separadamente por `infra/bootstrap/`). Um único state, sem módulos —
+cada recurso vive em um arquivo `.tf` nomeado a partir do tipo de recurso que provisiona (`network.tf`, `ecs.tf`,
 `rds.tf`, `elasticache.tf`, `frontend.tf`, `acm.tf`, `dns.tf`, `autoscaling.tf`).
 
-Secrets (DB password, JWT secret, webhook HMAC secret) are generated with `random_password` and published
-to SSM Parameter Store as `SecureString` parameters. The ECS task definition injects them into the backend
-container via `secrets` (`valueFrom` the parameter ARN), so nothing sensitive is hardcoded or passed as a
-plain environment variable.
+Segredos (senha do banco, JWT secret, HMAC secret do webhook) são gerados com `random_password` e publicados
+no SSM Parameter Store como parâmetros `SecureString`. A task definition do ECS os injeta no container do
+backend via `secrets` (`valueFrom` o ARN do parâmetro), então nada sensível fica hardcoded ou passado como
+variável de ambiente em texto plano.
 
-## Remote state (`infra/bootstrap/`)
+**Sumário:** [State remoto](#state-remoto-infrabootstrap) · [Rodando contra o LocalStack](#rodando-contra-o-localstack) · [Limitação conhecida](#limitação-conhecida) · [Lacuna: NAT Gateway](#lacuna-conhecida-nat-gateway) · [Lacuna: ALB HTTP-only](#lacuna-conhecida-alb-permanece-http-only) · [Hospedagem do frontend](#hospedagem-do-frontend) · [Imagem do container](#imagem-do-container) · [Autoscaling](#autoscaling) · [DNS e TLS](#dns-e-tls) · [Validando](#validando)
 
-Main `infra/`'s state lives in S3 (with DynamoDB locking) instead of a local `terraform.tfstate` file, so
-more than one person can `apply` without clobbering each other's state. That backend's own bucket/table are
-provisioned by a separate, self-contained Terraform config — `infra/bootstrap/` — which necessarily keeps
-its *own* state local, since it creates the very backend that main `infra/` depends on.
+## State remoto (`infra/bootstrap/`)
 
-Run this once (per environment):
+O state do `infra/` principal fica no S3 (com locking via DynamoDB) em vez de um `terraform.tfstate` local, para
+que mais de uma pessoa possa dar `apply` sem sobrescrever o state umas das outras. O bucket/tabela desse backend
+são provisionados por uma configuração Terraform separada e autocontida — `infra/bootstrap/` — que necessariamente
+mantém o *próprio* state local, já que ela cria o backend do qual o `infra/` principal depende.
+
+Rode isso uma vez (por ambiente):
 
 ```bash
 cd infra/bootstrap
@@ -26,171 +28,174 @@ terraform init
 terraform apply
 ```
 
-This creates a versioned S3 bucket (`<project>-<environment>-terraform-state`) and a DynamoDB table
-(`<project>-<environment>-terraform-lock`) — `chat-app-local-*` with the default vars.
+Isso cria um bucket S3 versionado (`<project>-<environment>-terraform-state`) e uma tabela DynamoDB
+(`<project>-<environment>-terraform-lock`) — `chat-app-local-*` com as variáveis padrão.
 
-Then point main `infra/` at that backend:
+Depois aponte o `infra/` principal para esse backend:
 
 ```bash
 cd infra
-cp backend.hcl.example backend.hcl   # gitignored; edit if you customized project/environment above
+cp backend.hcl.example backend.hcl   # no .gitignore; edite se você customizou project/environment acima
 terraform init -backend-config=backend.hcl
 ```
 
-`provider.tf` declares an empty `backend "s3" {}` block — a static backend block can't reference
-variables, and the bucket/table don't exist before `bootstrap/` runs, so the actual bucket/key/region/table
-are supplied via `-backend-config` instead of being hardcoded.
+`provider.tf` declara um bloco `backend "s3" {}` vazio — um bloco de backend estático não pode referenciar
+variáveis, e o bucket/tabela não existem antes do `bootstrap/` rodar, então o bucket/key/region/table reais
+são passados via `-backend-config` em vez de hardcoded.
 
-**What this does and doesn't prove:** the LocalStack run below (single container, single operator) confirms
-the S3-backend *mechanism* — init, state read/write, and DynamoDB locking all work end-to-end. It does not
-exercise concurrent applies from two different people, since that scenario needs a real shared AWS account
-to actually trigger lock contention.
+**O que isso prova e o que não prova:** a execução contra o LocalStack abaixo (container único, operador único) confirma
+o *mecanismo* do backend S3 — init, leitura/escrita de state e locking via DynamoDB funcionam de ponta a ponta. Não
+exercita applies concorrentes de duas pessoas diferentes, já que esse cenário precisa de uma conta AWS real
+compartilhada para de fato disparar contenção de lock.
 
-## Running against LocalStack
+## Rodando contra o LocalStack
 
-Requires [LocalStack](https://docs.localstack.cloud/) running locally (the community/free tier is enough
-to `apply` a bit under half of this Terraform — see "Known limitation" below for exactly which resources).
+Requer o [LocalStack](https://docs.localstack.cloud/) rodando localmente (o tier community/gratuito é suficiente
+para dar `apply` em pouco menos da metade deste Terraform — ver "Limitação conhecida" abaixo para saber exatamente
+quais recursos).
 
 ```bash
-# start LocalStack — pin to a known-working community tag; the `latest` tag now
-# requires a LOCALSTACK_AUTH_TOKEN just to boot, even for free-tier features
+# sobe o LocalStack — fixado numa tag community que funciona; a tag `latest` hoje
+# exige um LOCALSTACK_AUTH_TOKEN só pra subir, mesmo pras features do free-tier
 docker run -d --name localstack -p 4566:4566 localstack/localstack:3.8
 
-# from infra/bootstrap/, once
+# a partir de infra/bootstrap/, uma vez
 terraform init
 terraform apply
 
-# from infra/
+# a partir de infra/
 cp backend.hcl.example backend.hcl
 terraform init -backend-config=backend.hcl
 terraform plan
 terraform apply
 ```
 
-The `aws` provider is pre-configured (`provider.tf`) with dummy credentials and every endpoint pointed at
-`http://localhost:4566`, so no AWS credentials or account are needed. No `tflocal` wrapper required. Both
-the default provider and the `aws.us_east_1` alias (used for ACM/Route53 — see "DNS and TLS" below) set
-`s3_use_path_style = true`; without it, S3 bucket creation against LocalStack hangs retrying a malformed
-`HEAD /` request instead of erroring, since LocalStack's edge router doesn't resolve virtual-hosted-style
-bucket subdomains (`<bucket>.localhost:4566`) the way real S3 does.
+O provider `aws` já vem pré-configurado (`provider.tf`) com credenciais fake e todo endpoint apontado para
+`http://localhost:4566`, então não precisa de credenciais ou conta AWS. Não precisa do wrapper `tflocal`. Tanto
+o provider padrão quanto o alias `aws.us_east_1` (usado por ACM/Route53 — ver "DNS e TLS" abaixo) setam
+`s3_use_path_style = true`; sem isso, a criação de bucket S3 contra o LocalStack trava tentando repetidamente
+uma requisição `HEAD /` malformada em vez de dar erro, já que o edge router do LocalStack não resolve subdomínios
+virtual-hosted-style de bucket (`<bucket>.localhost:4566`) do jeito que o S3 real resolve.
 
-To tear everything down:
+Para derrubar tudo:
 
 ```bash
-terraform destroy                              # from infra/
-cd bootstrap && terraform destroy              # from infra/bootstrap/, last (S3 versioned bucket needs
-                                                # its object versions deleted first if it still holds state)
+terraform destroy                              # a partir de infra/
+cd bootstrap && terraform destroy              # a partir de infra/bootstrap/, por último (o bucket S3
+                                                # versionado precisa ter as versões de objeto apagadas
+                                                # primeiro, se ainda guardar state)
 ```
 
-## Known limitation
+## Limitação conhecida
 
-Confirmed by actually running `terraform apply` against LocalStack community edition 3.8.1 (ticket 11,
-re-confirmed under ticket 25 with the resources added below): several services used here are LocalStack
-Pro-tier only and fail with a 501 "not yet implemented or pro feature" error on `apply`, even though they
-pass `terraform validate`/`plan`:
+Confirmado rodando de fato `terraform apply` contra o LocalStack community edition 3.8.1 (ticket 11,
+reconfirmado no ticket 25 com os recursos adicionados abaixo): vários serviços usados aqui são exclusivos do
+tier Pro do LocalStack e falham com erro 501 "not yet implemented or pro feature" no `apply`, mesmo passando
+em `terraform validate`/`plan`:
 
 - **ECS** — `aws_ecs_cluster`, `aws_ecs_service` (`ecs.tf`)
 - **ECR** — `aws_ecr_repository` (`ecs.tf`)
 - **RDS** — `aws_db_subnet_group`, `aws_db_instance` (`rds.tf`)
-- **ElastiCache** — `aws_elasticache_cluster` (`elasticache.tf`, see ADR-0003)
+- **ElastiCache** — `aws_elasticache_cluster` (`elasticache.tf`, ver ADR-0003)
 - **ELBv2** — `aws_lb`, `aws_lb_target_group` (`network.tf`)
 - **CloudFront** — `aws_cloudfront_origin_access_control`, `aws_cloudfront_distribution` (`frontend.tf`,
-  new finding from ticket 25)
+  achado novo do ticket 25)
 
-**Not gated**, contrary to what was assumed going into ticket 25 — these applied successfully against the
-community tier: S3 (`aws_s3_bucket.frontend` and friends), Route53 (`aws_route53_zone`, records), and ACM
-(`aws_acm_certificate`, `aws_acm_certificate_validation`, including its DNS validation round-trip).
+**Não bloqueados**, ao contrário do que se assumia entrando no ticket 25 — estes aplicaram com sucesso no
+tier community: S3 (`aws_s3_bucket.frontend` e afins), Route53 (`aws_route53_zone`, records) e ACM
+(`aws_acm_certificate`, `aws_acm_certificate_validation`, incluindo o round-trip de validação via DNS).
 
-**Untested** — `aws_appautoscaling_target`/`aws_appautoscaling_policy` (`autoscaling.tf`) depend on
-`aws_ecs_service.backend`, which never gets created (ECS is Pro-gated above), so Application Auto Scaling's
-own LocalStack support couldn't actually be exercised; `terraform plan` is the only evidence it's wired up
-correctly.
+**Não testado** — `aws_appautoscaling_target`/`aws_appautoscaling_policy` (`autoscaling.tf`) dependem de
+`aws_ecs_service.backend`, que nunca chega a ser criado (ECS é bloqueado no Pro-tier, acima), então o suporte
+do Application Auto Scaling no LocalStack não pôde ser exercitado de fato; `terraform plan` é a única evidência
+de que está corretamente conectado.
 
-Only VPC/networking (subnets, route tables, security groups, IGW), IAM, CloudWatch Logs, SSM Parameter
-Store, S3, Route53, and ACM apply successfully against the community tier. Local *application* testing uses
-the plain Postgres/Redis containers from `backend/docker-compose.yml` instead, independent of this
-Terraform.
+Só VPC/rede (subnets, route tables, security groups, IGW), IAM, CloudWatch Logs, SSM Parameter Store, S3,
+Route53 e ACM aplicam com sucesso no tier community. O teste *da aplicação* localmente usa os containers
+Postgres/Redis simples do `backend/docker-compose.yml` em vez disso, independente deste Terraform.
 
-## Known gap: NAT Gateway
+## Lacuna conhecida: NAT Gateway
 
-Not provisioned. A NAT Gateway costs ~$32+/month running idle, and nothing in this stack would use the
-private route today — RDS/ElastiCache don't need internet egress, and ECS still runs in the public subnets
-(ticket 02's design, unchanged here). Provisioning an orphaned NAT now would be cost with no payoff. It
-ships together with a future "move ECS to private subnets" ticket, not before it — that's the ticket where
-it earns its cost.
+Não provisionado. Um NAT Gateway custa ~US$32+/mês parado, e nada nesse stack usaria a rota privada
+hoje — RDS/ElastiCache não precisam de egress para a internet, e o ECS ainda roda nas subnets públicas
+(desenho do ticket 02, inalterado aqui). Provisionar um NAT órfão agora seria custo sem retorno. Ele
+vem junto com um futuro ticket de "mover ECS para subnets privadas", não antes dele — é esse ticket que
+justifica o custo.
 
-## Known gap: ALB stays HTTP-only
+**Nota adicional:** o ECS roda com `assign_public_ip = true` — as tasks ficam diretamente acessíveis pela internet, protegidas apenas por security groups (sem egress privado via NAT como alternativa).
 
-`dns.tf` gives the frontend TLS via CloudFront (`aliases`/`viewer_certificate` backed by the ACM cert in
-`acm.tf`), but the ALB itself gets no listener/cert change — `api.<var.domain_name>` resolves to it over
-plain HTTP only. So `<var.domain_name>` (the frontend) is TLS end-to-end, but the API/WebSocket path behind
-`api.<var.domain_name>` is not. Adding an HTTPS listener to the ALB would reuse the same ACM certificate;
-deliberately out of scope here since ticket 25 was about closing the frontend-hosting/autoscaling/DNS/state
-gaps, not the ALB's transport security.
+## Lacuna conhecida: ALB permanece HTTP-only
 
-## Frontend hosting
+`dns.tf` dá ao frontend TLS via CloudFront (`aliases`/`viewer_certificate` apoiados no certificado ACM em
+`acm.tf`), mas o ALB em si não recebe mudança de listener/certificado — `api.<var.domain_name>` resolve
+para ele só por HTTP puro. Ou seja, `<var.domain_name>` (o frontend) é TLS ponta a ponta, mas o caminho
+da API/WebSocket atrás de `api.<var.domain_name>` não é. Adicionar um listener HTTPS ao ALB reaproveitaria
+o mesmo certificado ACM; deliberadamente fora de escopo aqui já que o ticket 25 era sobre fechar as lacunas
+de hospedagem do frontend/autoscaling/DNS/state, não a segurança de transporte do ALB.
 
-`frontend.tf` provisions a private S3 bucket (no public access) plus a CloudFront distribution reading from
-it via Origin Access Control — the bucket itself is unreachable except through CloudFront. Two
-`custom_error_response` blocks turn S3's 403/404 (any path that isn't a literal object, e.g.
-`/conversations/123`) into a 200 serving `/index.html`, so React Router's client-side routes work on direct
-load and refresh.
+## Hospedagem do frontend
 
-Build and deploy:
+`frontend.tf` provisiona um bucket S3 privado (sem acesso público) mais uma distribuição CloudFront lendo
+dele via Origin Access Control — o bucket em si é inacessível exceto pelo CloudFront. Dois blocos
+`custom_error_response` transformam 403/404 do S3 (qualquer caminho que não seja um objeto literal, ex.
+`/conversations/123`) em um 200 servindo `/index.html`, para as rotas client-side do React Router
+funcionarem em carregamento direto e refresh.
+
+Build e deploy:
 
 ```bash
 ./infra/scripts/deploy-frontend.sh
-# or, against LocalStack:
+# ou, contra o LocalStack:
 LOCALSTACK_ENDPOINT=http://localhost:4566 ./infra/scripts/deploy-frontend.sh
 ```
 
-This runs `npm run build` in `frontend/`, syncs `frontend/dist/` to the bucket (`aws s3 sync --delete`),
-and (real AWS only — LocalStack community doesn't support CloudFront, per the gap above) invalidates the
-CloudFront cache.
+Isso roda `npm run build` em `frontend/`, sincroniza `frontend/dist/` com o bucket (`aws s3 sync --delete`),
+e (só em AWS real — o LocalStack community não suporta CloudFront, conforme a lacuna acima) invalida o
+cache do CloudFront.
 
-## Container image
+## Imagem do container
 
-`backend/Dockerfile` builds the FastAPI backend (multi-stage, `uv`-managed deps, runs as a non-root user,
-`uvicorn app.main:app` on port 8000). Build and push it to `aws_ecr_repository.backend`:
+`backend/Dockerfile` builda o backend FastAPI (multi-stage, dependências gerenciadas por `uv`, roda como
+usuário não-root, `uvicorn app.main:app` na porta 8000). Build e push para `aws_ecr_repository.backend`:
 
 ```bash
 ./infra/scripts/push-backend-image.sh
-# or, against LocalStack:
+# ou, contra o LocalStack:
 LOCALSTACK_ENDPOINT=http://localhost:4566 ./infra/scripts/push-backend-image.sh
 ```
 
-Tags the image with `git rev-parse --short HEAD` (not `latest`) so deploys are reproducible/rollback-able —
-redeploy a specific build with `terraform apply -var="image_tag=<sha>"`. `var.image_tag` still *defaults* to
-`latest` for convenience (first `apply` before any image exists), but the documented push path always uses
-the commit SHA.
+Marca a imagem com `git rev-parse --short HEAD` (não `latest`) para que os deploys sejam reproduzíveis e
+reversíveis — redeploy de um build específico com `terraform apply -var="image_tag=<sha>"`. `var.image_tag`
+ainda tem `latest` como *default* por conveniência (primeiro `apply` antes de existir qualquer imagem), mas
+o caminho de push documentado sempre usa o SHA do commit.
 
 ## Autoscaling
 
-`autoscaling.tf` adds an `aws_appautoscaling_target` for `aws_ecs_service.backend` (`min_capacity = 1`,
-`max_capacity = 3`) with two target-tracking policies — `ECSServiceAverageCPUUtilization` and
-`ECSServiceAverageMemoryUtilization`, both targeting 70%. `var.backend_desired_count` still sets the
-service's *initial* task count at `apply` time; auto scaling takes over adjusting it afterward.
-`aws_ecs_service.backend` has `lifecycle { ignore_changes = [desired_count] }` (`ecs.tf`) so a later
-`terraform apply` doesn't reset a scaled-up task count back down to `var.backend_desired_count`.
+`autoscaling.tf` adiciona um `aws_appautoscaling_target` para `aws_ecs_service.backend` (`min_capacity = 1`,
+`max_capacity = 3`) com duas políticas de target-tracking — `ECSServiceAverageCPUUtilization` e
+`ECSServiceAverageMemoryUtilization`, ambas mirando 70%. `var.backend_desired_count` ainda define a
+contagem *inicial* de tasks do serviço no momento do `apply`; o autoscaling assume o ajuste depois disso.
+`aws_ecs_service.backend` tem `lifecycle { ignore_changes = [desired_count] }` (`ecs.tf`) para que um
+`terraform apply` posterior não zere de volta uma contagem de tasks já escalada para `var.backend_desired_count`.
 
-## DNS and TLS
+## DNS e TLS
 
-`dns.tf` creates an `aws_route53_zone` for `var.domain_name` (placeholder default: `chat-app.example.com`)
-with two alias records: the apex (`var.domain_name`) to CloudFront (frontend, TLS), and
-`api.var.domain_name` to the ALB (backend, HTTP-only — see the known gap above). `acm.tf` requests the ACM
-certificate CloudFront needs for the custom domain, in `us-east-1` specifically (CloudFront's hard
-requirement regardless of `var.aws_region`, via the `aws.us_east_1` provider alias in `provider.tf`), and
-validates it via DNS records in that same zone.
+`dns.tf` cria uma `aws_route53_zone` para `var.domain_name` (default placeholder: `chat-app.example.com`)
+com dois registros alias: o apex (`var.domain_name`) para o CloudFront (frontend, TLS), e
+`api.var.domain_name` para o ALB (backend, HTTP-only — ver a lacuna conhecida acima). `acm.tf` solicita o
+certificado ACM que o CloudFront precisa para o domínio customizado, especificamente em `us-east-1`
+(exigência rígida do CloudFront independente de `var.aws_region`, via o alias de provider `aws.us_east_1`
+em `provider.tf`), e o valida via registros DNS nessa mesma zona.
 
-Going live against real AWS additionally needs: `var.domain_name` set to an actually-registered domain, and
-that domain's registrar pointed at the zone's `route53_name_servers` output (Terraform can't do this last
-step — it's at the registrar, outside AWS).
+Ir para produção contra a AWS real precisa adicionalmente de: `var.domain_name` apontando para um domínio
+de fato registrado, e o registrador desse domínio apontado para o output `route53_name_servers` da zona
+(o Terraform não consegue fazer esse último passo — é no registrador, fora da AWS).
 
-## Validating
+## Validando
 
 ```bash
 terraform validate   # infra/
 terraform validate   # infra/bootstrap/
 ```
 
-Checks syntax and internal consistency only — doesn't require LocalStack to be running.
+Checa só sintaxe e consistência interna — não precisa do LocalStack rodando.
