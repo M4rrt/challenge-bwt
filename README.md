@@ -1,116 +1,53 @@
-# Desafio Técnico
+# Chat Multiusuário
 
-## Visão Geral
+Aplicação de chat em tempo real, com isolamento de conversas entre usuários, webhook externo autenticado por HMAC e infraestrutura provisionada via Terraform. Documentação da entrega abaixo; detalhes de cada camada nos READMEs próprios.
 
-Bem-vindo(a) ao desafio técnico! O objetivo é avaliar sua capacidade de projetar e implementar uma solução **fullstack completa**, cobrindo **frontend, backend e IAC**, com foco em arquiteturas modernas, escalabilidade e boas práticas de engenharia.
+## Como rodar o projeto localmente
 
-Você deverá construir uma **aplicação de chat multiusuário**, onde:
+Requisito único: Docker + Docker Compose.
 
-- Múltiplos usuários podem conversar entre si;
-- **Um usuário não pode visualizar a conversa de outro usuário** que não seja com ele (isolamento de conversas/salas);
-- A comunicação em tempo real deve ser implementada;
-- Deve haver um **endpoint de webhook** exposto para receber eventos externos (ex.: simular integração com um provedor terceiro, como um sistema de notificações ou gateway de mensagens);
-- Pontos extras para uso de **WebSocket** e **integração com uma LLM** (OpenAI, Anthropic Claude, Bedrock, modelos locais, etc.).
-
-**Tempo estimado:** este desafio foi desenhado para ser resolvido em um **final de semana** (aproximadamente 8-16h de esforço). Não esperamos uma solução perfeita e 100% "production ready" — priorize demonstrar clareza de arquitetura, boas práticas e decisões técnicas bem justificadas.
-
----
-
-## Escopo Funcional
-
-### Requisitos obrigatórios
-
-
-1. **Chat multiusuário**
-   - Deve ser possível criar/entrar em conversas (1:1 ou em grupo/sala).
-   - Um usuário só deve visualizar as mensagens das conversas das quais participa.
-   - Persistência das mensagens (banco de dados à sua escolha).
-
-2. **Comunicação em tempo real**
-   - Implementação via **WebSocket** (ex.: API Gateway WebSocket na AWS, Socket.IO, ou similar) para envio/recebimento de mensagens sem necessidade de polling.
-
-3. **Endpoint de Webhook**
-   - Exposição de um endpoint HTTP (ex.: `POST /webhook/messages`) capaz de receber eventos externos simulando, por exemplo, uma mensagem enviada por um sistema terceiro, que deve ser propagada para a sala/conversa correta em tempo real.
-   - Deve haver alguma forma de validação (assinatura, token, etc.) simulando um cenário real de segurança de webhook.
-
-4. **Infraestrutura como código**
-   - Toda a infraestrutura necessária para rodar a aplicação na AWS deve ser provisionada via **Terraform**.
-   - Pode ser testada localmente com **LocalStack** ou similar, caso não deseje provisionar recursos reais na AWS (opcional, mas caso utilize AWS real, deixar claro como destruir os recursos ao final — `terraform destroy`). Utilize Docker para subir todas as dependencias necessárias para executar as aplicações localmente.
-
-5. **Documentação**
-   - README próprio em cada camada (`frontend/`, `backend/`, `infra/`) explicando como rodar o projeto localmente.
-   - Diagrama de arquitetura (pode ser feito em Excalidraw, draw.io, Mermaid, etc.) explicando o fluxo de dados.
-   - Se possível, faça um desenho considerando todas as peças de uma Cloud AWS necessárias para executar o sistema. (Utilize por ex. DrawIO.)
-
-### Pontos extras (diferenciais avaliados, não obrigatórios)
-1. **Autenticação/Identificação de usuários**
-   - Pode ser simplificada (ex.: login apenas com nome/e-mail, JWT simples, ou até um mock de auth), desde que cada usuário tenha uma identidade única na sessão.
-- Uso de **WebSocket nativo via AWS API Gateway** (ao invés de apenas Socket.IO/long polling).
-- Integração com uma **LLM** para, por exemplo:
-  - Um bot/assistente disponível dentro do chat que responde perguntas;
-  - Sumarização automática de conversas;
-  - Moderação de conteúdo das mensagens.
-- Uso de filas (**SQS**) ou **Kafka** para desacoplar o processamento de mensagens (ex.: mensagem recebida → fila → consumer → broadcast via WebSocket).
-- Arquitetura de **microsserviços** (separação entre serviço de autenticação, serviço de mensagens, serviço de notificações, etc.).
-- Uso de conceitos de **microfrontends** (ex.: módulo de chat separado do módulo de autenticação/dashboard, via Module Federation ou abordagem similar).
-- Testes automatizados (unitários e/ou integração) no frontend e backend.
-- Pipeline de CI/CD (ex.: GitHub Actions) para lint, testes e build.
-- Observabilidade (logs estruturados, métricas, tracing).
-
----
-
-## Stack Esperada
-
-| Camada             | Tecnologias sugeridas                                                            |
-|---------------------|-----------------------------------------------------------------------------------|
-| Frontend            | React  |
-| Backend             | Python (FastAPI ou Flask), WebSocket (via `websockets`, FastAPI, ou API Gateway) |
-| Banco de Dados      | PostgreSQL, DynamoDB, ou outro à sua escolha, com justificativa                  |
-| Mensageria          | SQS, Kafka, ou similar (opcional, para pontos extras)                            |
-| Infraestrutura      | Terraform                |
-| LLM (opcional)      | OpenAI API, Anthropic Claude API, AWS Bedrock, ou modelo open source local        |
-
-> Você pode utilizar sites de geração de mocks (ex.: Mockaroo, JSON Server, MSW) para simular dados ou serviços externos quando fizer sentido — mas espera-se que você **domine e demonstre proficiência** nas técnicas centrais do desafio (microsserviços, webhooks, WebSocket, filas), e não apenas "mocke" a arquitetura inteira.
-
----
-
-## 📁 Estrutura Esperada do Repositório
-
-```
-.
-├── README.md
-├── frontend/
-│   ├── README.md
-│   └── ...              # aplicação React
-├── backend/
-│   ├── README.md
-│   └── ...              # serviços Python (podem ser subpastas por microsserviço)
-├── infra/
-│   ├── README.md
-│   └── ...              # código Terraform (módulos, envs, etc.)
-└── docs/
-    ├── architecture.png (ou .md com diagrama Mermaid)
-    └── decisions.md      # ADRs / decisões técnicas relevantes
+```bash
+docker compose up
 ```
 
-> A estrutura acima é uma sugestão. Caso opte por uma abordagem de monorepo com ferramentas específicas, justifique a escolha no README raiz.
+Sobe Postgres, Redis, backend (FastAPI, hot-reload) e frontend (Vite, HMR) juntos:
 
----
+- Frontend: http://localhost:5173
+- Backend: http://localhost:8000 (health check: `curl http://localhost:8000/health`)
+- O backend roda as migrations do Alembic automaticamente na subida.
 
-## Entrega
+Detalhes de cada camada (rodar sem Docker, variáveis de ambiente, testes, migrations) estão nos READMEs próprios:
 
-1. Faça um fork ou crie um repositório privado, adicionando os avaliadores como colaboradores.
-2. Realize commits incrementais e com mensagens claras (evite um único commit gigante) — isso nos ajuda a entender seu processo de raciocínio.
-3. Ao finalizar, atualize este README com:
-   - Instruções de como rodar o projeto localmente (frontend, backend e infra);
-   - Decisões técnicas tomadas e trade-offs considerados;
-   - O que você faria diferente com mais tempo.
-4. Envie o link do repositório para o time de recrutamento.
+- [`frontend/README.md`](frontend/README.md)
+- [`backend/README.md`](backend/README.md)
+- [`infra/README.md`](infra/README.md) — Terraform para AWS, com instruções para validar/aplicar contra LocalStack (com a ressalva: ECS, ECR, RDS, ElastiCache, ELBv2 e CloudFront são recursos pagos/Pro-tier do LocalStack e falham com `apply` na edição community — ver "Limitação conhecida" nesse README).
 
----
+Diagramas de arquitetura (fluxo de dados e infraestrutura AWS): [`docs/architecture.md`](docs/architecture.md) e [`docs/aws-architecture.md`](docs/aws-architecture.md) (renderizações Mermaid); o arquivo editável [`docs/aws-architecture.drawio`](docs/aws-architecture.drawio) e o spec que o originou, [`docs/aws-diagram-spec.md`](docs/aws-diagram-spec.md), também estão versionados.
 
-## Dúvidas
+## Decisões técnicas e trade-offs
 
-Ambiguidades fazem parte do dia a dia de um(a) engenheiro(a) sênior. Caso encontre pontos não especificados neste desafio, **tome uma decisão razoável, documente sua premissa** e siga em frente. Isso também é parte do que estamos avaliando.
+Decisões com trade-offs reais viraram ADR em [`docs/adr/`](docs/adr/); deferimentos mais leves e escolhas de tooling estão em [`docs/decisions.md`](docs/decisions.md). Resumo das principais:
 
-Boa sorte e bom desafio!
+- [ADR-0001](docs/adr/0001-containerized-websocket-over-api-gateway.md) — WebSocket é servido pelo próprio container do backend, não via AWS API Gateway (evita ter que rastrear connection IDs externamente no orçamento de tempo do desafio).
+- [ADR-0002](docs/adr/0002-explicit-idempotent-conversation-creation.md) — criação de conversa é explícita (`POST /conversations`) e idempotente para 1:1, em vez de implícita no envio da primeira mensagem.
+- [ADR-0003](docs/adr/0003-redis-pubsub-for-horizontal-scaling.md) — Redis pub/sub para fan-out entre instâncias do backend, já que "escalabilidade" é critério de avaliação explícito do desafio.
+- [ADR-0004](docs/adr/0004-jwt-in-localstorage.md) — JWT em `localStorage` em vez de cookie `httpOnly`, trade-off consciente dado o escopo de "auth simplificada".
+- [ADR-0005](docs/adr/0005-client-side-hmac-webhook-test-page.md) — a página de teste do webhook assina o HMAC no browser; segredo aceitável de expor só porque é uma ferramenta de teste manual atrás de login.
+- `docs/decisions.md` também documenta as escolhas de stack (Vite, TanStack Query, MUI no frontend; SQLAlchemy async + Alembic, `uv`, bcrypt no backend) e a estrutura por camada (`routers/`, `models/`, `schemas/`, `services/`, `core/`) do backend.
+
+## O que eu faria diferente com mais tempo
+
+Lista completa de itens deferidos em [`docs/decisions.md`](docs/decisions.md#deferred) e [`docs/decisions.md`](docs/decisions.md#extras-not-pursued). Os principais:
+
+- **Offline/unread tracking.** Hoje um participante desconectado busca o backlog via REST ao reconectar, sem read receipts ou contagem de não lidas — é a primeira coisa que eu adicionaria, por ser uma feature genuinamente separada (estado próprio, UI, casos de borda).
+- **Rodar sem Redis, single-instance.** O fan-out via Redis pub/sub ([ADR-0003](docs/adr/0003-redis-pubsub-for-horizontal-scaling.md)) foi construído agora, e não deferido, porque escalabilidade é critério avaliado — a alternativa mais simples (uma única instância do backend com um registro de conexões em memória, sem Redis) foi discutida e descartada por esse motivo. O design foi validado por leitura/revisão, mas nunca testado de fato com duas ou mais réplicas do backend rodando simultaneamente; com mais tempo, validaria esse comportamento fim a fim antes de confiar nele em produção.
+- **Extras não perseguidos:** bot de LLM no chat, microfrontends, WebSocket nativo via AWS API Gateway ([ADR-0001](docs/adr/0001-containerized-websocket-over-api-gateway.md)), filas (SQS/Kafka) para desacoplar o processamento, arquitetura de microsserviços, pipeline de CI/CD e observabilidade (logs estruturados, métricas, tracing). Auth (JWT) e Tests foram os extras priorizados no orçamento de 8-16h; os demais ficam para depois, nessa ordem de prioridade.
+- **Gaps de segurança/robustez conhecidos:**
+  - Sem proteção contra replay na assinatura do webhook.
+  - Sem checagem de que o `conversation_id` do webhook pertence a um participante — o segredo HMAC é a única fronteira de confiança.
+  - Sem forma segura de um sistema externo descobrir a qual conversa postar — hoje precisa saber o UUID de antemão.
+  - Sem tiebreaker de ordenação de mensagens além de `created_at`.
+  - Refresh token sem rotação no uso — fica válido até expirar ou logout explícito.
+  - Logout não fecha WebSockets já abertos com o token antigo — token JWT é stateless e não tem revogação server-side.
+- **Ordem de participantes não é uma garantia formal.** A resposta de conversas retorna participantes ordenados por `user_id`, mas isso hoje é efeito colateral do plano de execução do Postgres sobre o índice único composto de `conversation_participants` (confirmado ao investigar o RED de um teste no ticket 23), não uma garantia de SQL/SQLAlchemy — um `ORDER BY` explícito seria o fix correto antes de depender disso.
+- **Gaps de infra conhecidos** (ver [`infra/README.md`](infra/README.md)): NAT Gateway não provisionado (custo sem uso real no desenho atual), e o ALB permanece HTTP-only mesmo com o frontend em TLS via CloudFront.
