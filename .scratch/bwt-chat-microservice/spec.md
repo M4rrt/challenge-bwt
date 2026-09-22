@@ -507,8 +507,15 @@ repository and this tracker cannot hold it.
 
 ### Contracts owned by the monolith
 
-Specified here because the service is built against them, tracked outside this
-repository:
+Specified here because the service is built against them. They are tracked in the
+repositories that own them, each in that repository's own convention:
+
+- **Monolith** — `brwinetours-backend-development/specs/002-chat-service-integration/`
+  (Spec Kit: `spec.md` with FR-001..FR-030, `tasks.md` with T001..T054 across ten
+  phases). Everything below except the last item lives there.
+- **BWT frontend** — `brwinetours-frontend-dev/specs/001-chat-link-out/`
+  (`spec.md` + `tasks.md`), covering only the link-out and the removal of the
+  embedded module.
 
 - **Chat token issue** — returns a fifteen-minute RS256 token for the
   authenticated user, with the claims listed above.
