@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from collections import defaultdict
 
@@ -70,12 +71,14 @@ async def publish_to_user(user_id: uuid.UUID, payload: str) -> None:
     await _publish_client.publish(_channel_for_user(user_id), payload)
 
 
-async def run_subscriber() -> None:
+async def run_subscriber(subscribed: asyncio.Event | None = None) -> None:
     subscriber_client: redis.Redis = redis.Redis.from_url(
         settings.redis_url, decode_responses=True
     )
     pubsub = subscriber_client.pubsub()
     await pubsub.psubscribe(CONVERSATION_CHANNEL_PATTERN, USER_CHANNEL_PATTERN)
+    if subscribed is not None:
+        subscribed.set()
     try:
         async for event in pubsub.listen():
             if event["type"] != "pmessage":

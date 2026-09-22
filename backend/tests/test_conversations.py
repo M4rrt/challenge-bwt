@@ -1,25 +1,12 @@
 from httpx import AsyncClient
 
-
-async def _register_and_login(client: AsyncClient, email: str) -> tuple[str, dict[str, str]]:
-    username = email.split("@")[0]
-    register_response = await client.post(
-        "/auth/register",
-        json={"email": email, "username": username, "password": "Senha-Forte-123"},
-    )
-    user_id = register_response.json()["id"]
-
-    login_response = await client.post(
-        "/auth/login", json={"email": email, "password": "Senha-Forte-123"}
-    )
-    token = login_response.json()["access_token"]
-
-    return user_id, {"Authorization": f"Bearer {token}"}
+from tests.chat_tokens import bearer, caller_token
 
 
 async def test_create_one_to_one_conversation(client: AsyncClient):
-    user_a_id, headers_a = await _register_and_login(client, "ana@example.com")
-    user_b_id, _ = await _register_and_login(client, "beto@example.com")
+    user_a_id, _token = caller_token()
+    headers_a = bearer(_token)
+    user_b_id, _ = caller_token()
 
     response = await client.post(
         "/conversations",
@@ -34,9 +21,10 @@ async def test_create_one_to_one_conversation(client: AsyncClient):
 
 
 async def test_create_group_conversation(client: AsyncClient):
-    user_a_id, headers_a = await _register_and_login(client, "carla@example.com")
-    user_b_id, _ = await _register_and_login(client, "davi@example.com")
-    user_c_id, _ = await _register_and_login(client, "elis@example.com")
+    user_a_id, _token = caller_token()
+    headers_a = bearer(_token)
+    user_b_id, _ = caller_token()
+    user_c_id, _ = caller_token()
 
     response = await client.post(
         "/conversations",
@@ -54,9 +42,10 @@ async def test_create_group_conversation(client: AsyncClient):
 
 
 async def test_create_group_conversation_requires_name(client: AsyncClient):
-    user_a_id, headers_a = await _register_and_login(client, "fabio@example.com")
-    user_b_id, _ = await _register_and_login(client, "gina@example.com")
-    user_c_id, _ = await _register_and_login(client, "hugo@example.com")
+    user_a_id, _token = caller_token()
+    headers_a = bearer(_token)
+    user_b_id, _ = caller_token()
+    user_c_id, _ = caller_token()
 
     response = await client.post(
         "/conversations",
@@ -70,8 +59,9 @@ async def test_create_group_conversation_requires_name(client: AsyncClient):
 async def test_duplicate_one_to_one_creation_returns_existing_conversation(
     client: AsyncClient,
 ):
-    user_a_id, headers_a = await _register_and_login(client, "ivo@example.com")
-    user_b_id, _ = await _register_and_login(client, "julia@example.com")
+    user_a_id, _token = caller_token()
+    headers_a = bearer(_token)
+    user_b_id, _ = caller_token()
 
     first_response = await client.post(
         "/conversations",
@@ -92,9 +82,10 @@ async def test_duplicate_one_to_one_creation_returns_existing_conversation(
 async def test_one_to_one_creation_ignores_group_with_same_two_members(
     client: AsyncClient,
 ):
-    user_a_id, headers_a = await _register_and_login(client, "karen@example.com")
-    user_b_id, _ = await _register_and_login(client, "leo@example.com")
-    user_c_id, _ = await _register_and_login(client, "mara@example.com")
+    user_a_id, _token = caller_token()
+    headers_a = bearer(_token)
+    user_b_id, _ = caller_token()
+    user_c_id, _ = caller_token()
 
     group_response = await client.post(
         "/conversations",
@@ -117,8 +108,9 @@ async def test_one_to_one_creation_ignores_group_with_same_two_members(
 async def test_list_conversations_includes_null_last_message_at_when_no_messages(
     client: AsyncClient,
 ):
-    user_a_id, headers_a = await _register_and_login(client, "quim@example.com")
-    user_b_id, _ = await _register_and_login(client, "rita@example.com")
+    user_a_id, _token = caller_token()
+    headers_a = bearer(_token)
+    user_b_id, _ = caller_token()
 
     await client.post(
         "/conversations",
@@ -135,8 +127,9 @@ async def test_list_conversations_includes_null_last_message_at_when_no_messages
 async def test_list_conversations_reflects_most_recent_message_timestamp(
     client: AsyncClient,
 ):
-    user_a_id, headers_a = await _register_and_login(client, "sonia@example.com")
-    user_b_id, _ = await _register_and_login(client, "tulio@example.com")
+    user_a_id, _token = caller_token()
+    headers_a = bearer(_token)
+    user_b_id, _ = caller_token()
 
     create_response = await client.post(
         "/conversations",
@@ -159,9 +152,10 @@ async def test_list_conversations_reflects_most_recent_message_timestamp(
 
 
 async def test_list_conversations_orders_by_most_recent_message_first(client: AsyncClient):
-    user_a_id, headers_a = await _register_and_login(client, "urso@example.com")
-    user_b_id, _ = await _register_and_login(client, "vitoria@example.com")
-    user_c_id, _ = await _register_and_login(client, "wagner@example.com")
+    user_a_id, _token = caller_token()
+    headers_a = bearer(_token)
+    user_b_id, _ = caller_token()
+    user_c_id, _ = caller_token()
 
     older_response = await client.post(
         "/conversations",
@@ -201,9 +195,12 @@ async def test_list_conversations_orders_by_most_recent_message_first(client: As
 
 
 async def test_list_conversations_returns_only_own_conversations(client: AsyncClient):
-    user_a_id, headers_a = await _register_and_login(client, "nina@example.com")
-    user_b_id, headers_b = await _register_and_login(client, "otto@example.com")
-    _, headers_c = await _register_and_login(client, "paula@example.com")
+    user_a_id, _token = caller_token()
+    headers_a = bearer(_token)
+    user_b_id, _token = caller_token()
+    headers_b = bearer(_token)
+    _, _token = caller_token()
+    headers_c = bearer(_token)
 
     shared_response = await client.post(
         "/conversations",

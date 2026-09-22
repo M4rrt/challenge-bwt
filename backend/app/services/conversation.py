@@ -5,9 +5,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.chat_token import Caller
 from app.models.conversation import Conversation, ConversationParticipant
 from app.models.message import Message
-from app.models.user import User
 from app.schemas.conversation import ConversationCreate, ConversationRead
 from app.services.realtime import publish_to_user
 
@@ -42,9 +42,9 @@ async def _find_existing_one_to_one(
 
 
 async def create_conversation(
-    db: AsyncSession, current_user: User, data: ConversationCreate
+    db: AsyncSession, caller: Caller, data: ConversationCreate
 ) -> Conversation:
-    participant_ids = {current_user.id, *data.participant_user_ids}
+    participant_ids = {caller.id, *data.participant_user_ids}
 
     if len(participant_ids) > 2 and not data.name:
         raise GroupNameRequiredError()
@@ -65,11 +65,11 @@ async def create_conversation(
     return conversation
 
 
-async def list_conversations(db: AsyncSession, current_user: User) -> list[Conversation]:
+async def list_conversations(db: AsyncSession, caller: Caller) -> list[Conversation]:
     result = await db.scalars(
         select(Conversation)
         .join(ConversationParticipant)
-        .where(ConversationParticipant.user_id == current_user.id)
+        .where(ConversationParticipant.user_id == caller.id)
         .options(selectinload(Conversation.participants))
     )
     return list(result.all())

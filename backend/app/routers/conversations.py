@@ -3,9 +3,9 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import get_current_user
+from app.core.chat_token import Caller
+from app.core.security import get_current_caller
 from app.db import get_db
-from app.models.user import User
 from app.models.conversation import Conversation
 from app.schemas.conversation import ConversationCreate, ConversationRead
 from app.services.conversation import (
@@ -32,11 +32,11 @@ def _to_read(conversation: Conversation, last_message_at: datetime | None = None
 @router.post("", response_model=ConversationRead, status_code=201)
 async def create(
     data: ConversationCreate,
-    current_user: User = Depends(get_current_user),
+    caller: Caller = Depends(get_current_caller),
     db: AsyncSession = Depends(get_db),
 ) -> ConversationRead:
     try:
-        conversation = await create_conversation(db, current_user, data)
+        conversation = await create_conversation(db, caller, data)
     except GroupNameRequiredError:
         raise HTTPException(status_code=422, detail="name is required for group conversations")
     last_message_at_by_id = await get_last_message_at_by_conversation(db, [conversation.id])
@@ -45,10 +45,10 @@ async def create(
 
 @router.get("", response_model=list[ConversationRead])
 async def list_all(
-    current_user: User = Depends(get_current_user),
+    caller: Caller = Depends(get_current_caller),
     db: AsyncSession = Depends(get_db),
 ) -> list[ConversationRead]:
-    conversations = await list_conversations(db, current_user)
+    conversations = await list_conversations(db, caller)
     last_message_at_by_id = await get_last_message_at_by_conversation(
         db, [c.id for c in conversations]
     )

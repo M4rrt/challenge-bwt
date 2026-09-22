@@ -3,9 +3,9 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.chat_token import Caller
 from app.models.conversation import Conversation, ConversationParticipant
 from app.models.message import Message
-from app.models.user import User
 from app.schemas.message import MessageCreate, WebhookMessageCreate
 from app.services.conversation import notify_participants
 from app.services.realtime import publish_message
@@ -38,13 +38,13 @@ async def _persist_and_publish(db: AsyncSession, message: Message) -> Message:
 
 
 async def send_message(
-    db: AsyncSession, current_user: User, conversation_id: uuid.UUID, data: MessageCreate
+    db: AsyncSession, caller: Caller, conversation_id: uuid.UUID, data: MessageCreate
 ) -> Message:
-    await assert_participant(db, conversation_id, current_user.id)
+    await assert_participant(db, conversation_id, caller.id)
 
     message = Message(
         conversation_id=conversation_id,
-        sender_id=current_user.id,
+        sender_id=caller.id,
         sender_type="user",
         body=data.body,
     )
@@ -71,9 +71,9 @@ async def send_external_message(db: AsyncSession, data: WebhookMessageCreate) ->
 
 
 async def list_messages(
-    db: AsyncSession, current_user: User, conversation_id: uuid.UUID
+    db: AsyncSession, caller: Caller, conversation_id: uuid.UUID
 ) -> list[Message]:
-    await assert_participant(db, conversation_id, current_user.id)
+    await assert_participant(db, conversation_id, caller.id)
 
     result = await db.scalars(
         select(Message)
