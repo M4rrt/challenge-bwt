@@ -1,6 +1,16 @@
 # Chat has a token of its own, in RS256, and the service can never mint one
 
-**Status:** accepted
+**Status:** accepted — **not yet implemented.** Tracked by
+`.scratch/bwt-chat-microservice/issues/19-chat-token-signed-rs256.md`.
+
+> **The service can still mint tokens today.** Ticket 01 took the chat token's
+> *claims* — which is what the rest of the spec was blocked on — and deliberately
+> left the signature alone: verification is HS256 against a shared secret. So the
+> central guarantee below, that a compromised chat service cannot impersonate
+> anyone, **is not true of the running code**. It becomes true when ticket 19
+> lands, which must happen before this service sees production traffic. Everything
+> else in this ADR describes the decision as accepted, not as shipped.
+
 
 The service does not verify the product's access token. The monolith issues a
 **chat token** of its own, from a dedicated endpoint, signed with RS256 and a key

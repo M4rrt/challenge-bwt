@@ -57,7 +57,7 @@ Duas famílias de canais Redis pub/sub, uma por instância do backend (ver [ADR-
 - `conversation:{id}` — corpo da mensagem, entregue a quem tem aquela conversa aberta no WebSocket. Cada instância faz um único `PSUBSCRIBE conversation:*` (não subscribe/unsubscribe por conversa), evitando race de reference-counting ao abrir/fechar várias abas.
 - `user:{id}` — resumo leve ("essa conversa mudou"), entregue a todo participante independente de qual conversa está aberta; é o que mantém a prévia da última mensagem viva na lista de conversas sem cada cliente assinar todas as conversas de que participa.
 
-Endpoints: `WS /websocket/conversations/{id}` e `WS /websocket/users/me`, ambos autenticados via JWT como query param `token` (o handshake do WebSocket não carrega header `Authorization` customizado). Isso tem um custo: query strings tendem a ser gravadas em logs de acesso de proxies/ALB e no histórico do navegador, diferente de um header — trade-off não documentado em nenhum ADR até agora. A alternativa mais comum é conectar sem token e autenticar pela primeira mensagem do socket.
+Endpoints: `WS /websocket/conversations/{id}` e `WS /websocket/users/me`, ambos autenticados via chat token como query param `token` (o handshake do WebSocket não carrega header `Authorization` customizado). Isso tem um custo: query strings tendem a ser gravadas em logs de acesso de proxies/ALB e no histórico do navegador, diferente de um header — trade-off não documentado em nenhum ADR até agora. A alternativa mais comum é conectar sem token e autenticar pela primeira mensagem do socket.
 
 Se a conexão com o Redis cair, `run_subscriber` (`app/services/realtime.py`) simplesmente morre — sem log, sem retry, sem healthcheck que detecte isso. A entrega em tempo real para silenciosamente até o processo ser reiniciado.
 
@@ -116,10 +116,16 @@ uv run pytest
 
 Não bloqueia o funcionamento hoje, mas seria o primeiro ponto de atenção antes de qualquer uso com carga real:
 
+- **BLOQUEADOR DE PRODUÇÃO: o chat token ainda é HS256.** `app/core/chat_token.py`
+  verifica com um segredo compartilhado, então o serviço **consegue emitir um
+  token que ele próprio aceita**. O [ADR-0009](../docs/adr/0009-chat-owns-token-in-rs256.md)
+  foi aceito justamente para remover essa propriedade e ainda não está
+  implementado. Ticket 19 troca por RS256 + `kid` + JWKS + `aud` obrigatório.
+  Nada abaixo desta linha é um risco da mesma ordem.
 - **Sem índice em `messages.conversation_id`.** Nenhuma migração cria esse índice — `list_messages` (filtra por `conversation_id`, ordena por `created_at`) e a busca da última mensagem por conversa fazem table scan à medida que o histórico cresce.
 - **Índice de `conversation_participants` favorece a query errada.** O `UniqueConstraint(conversation_id, user_id)` serve bem a checagem de membership, mas `list_conversations` — chamada a cada carregamento da sidebar — filtra só por `user_id`; faltaria um índice dedicado liderado por esse campo.
-- **Sem rate limiting** em `/auth/login`, `/auth/register` e `/webhook/messages`.
-- **Sem paginação** em nenhuma listagem (`GET /conversations`, `GET /conversations/{id}/messages`, `GET /users`) — todas devolvem o conjunto inteiro.
+- **Sem rate limiting** em `/webhook/messages`.
+- **Sem paginação** em nenhuma listagem (`GET /conversations`, `GET /conversations/{id}/messages`) — todas devolvem o conjunto inteiro.
 - **Zero logging estruturado** em todo o `app/` — combinado com o subscriber Redis sem tratamento de falha (acima), é o ponto mais arriscado de operar isso em produção sem visibilidade.
 
 ## Migrations
