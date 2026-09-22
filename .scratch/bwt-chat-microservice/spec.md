@@ -650,19 +650,25 @@ message tests. `frontend/src/**/*.test.tsx` is the model for seam 3.
 `newchat_service_proposal_01.md` is an independent proposal for the same
 extraction, written by someone else and still in "proposed" status. Its internal
 contradictions have been resolved in place. Five points where this spec
-**deliberately differs** remain open and need agreement with its author before the
-affected tickets are worked, because all five are expensive to reverse:
+**deliberately differs** were identified; four remain open and need agreement with
+its author before the affected tickets are worked, because all four are expensive
+to reverse:
 
 1. **UUID versus sequential integer identifiers.** This spec says UUID.
+   Affects ticket 03.
 2. **Three fan-out addresses versus two.** This spec says three, adding the
-   staff-only address.
-3. **`staff` | `client` versus `internal` | `negotiation`** as the Chat type
-   vocabulary. This spec follows `CONTEXT.md`.
-4. **The inbound external webhook.** Absent from the proposal; retained and
-   hardened here.
-5. **A separate chat interface versus repointing the existing BWT frontend at the
+   staff-only address. Affects ticket 07.
+3. **The inbound external webhook.** Absent from the proposal; retained and
+   hardened here. Affects ticket 14.
+4. **A separate chat interface versus repointing the existing BWT frontend at the
    service.** This spec removes the embedded module
    ([ADR-0006](../../docs/adr/0006-session-handoff-via-exchange-code.md)).
+   Affects tickets 16 and 17.
+
+**Decided:** the Chat type vocabulary is `staff | client`, not
+`internal | negotiation`. `CONTEXT.md` is the source of truth for the domain's
+language; a different word in the proposal is a rename there, not a change here.
+Ticket 03 is unblocked.
 
 ### Ordering constraint for tickets
 

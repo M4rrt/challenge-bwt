@@ -139,8 +139,11 @@ through [0011](adr/0011-revocation-at-the-next-token.md)); what is here is light
   projection hit-rate metrics, and §13's phase-4 compatibility proxy, plus a set of
   dangling §15 cross-references and a "three routes" list naming four. What remains
   open are five points where our design deliberately differs, all expensive to
-  reverse: UUID against sequential integer identifiers, three fan-out addresses
-  against two, `staff | client` against `internal | negotiation`, the inbound
-  external webhook the proposal omits, and a separate chat interface against
-  repointing the existing BWT frontend. They are listed under "Further Notes" in
+  reverse. One is now **decided**: the Chat type vocabulary stays `staff | client`,
+  not `internal | negotiation` — `CONTEXT.md` is the source of truth for the
+  domain's language, and a different word in the proposal is a rename there, not a
+  change here. Four remain open: UUID against sequential integer identifiers,
+  three fan-out addresses against two, the inbound external webhook the proposal
+  omits, and a separate chat interface against repointing the existing BWT
+  frontend. They are listed under "Further Notes" in
   [the spec](../.scratch/bwt-chat-microservice/spec.md).
