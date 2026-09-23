@@ -9,7 +9,7 @@ from app.core.company_scope import CompanyScope
 from app.models.chat import Chat, ChatType, Participant, ParticipantRole
 from app.schemas.message import MessageCreate
 from app.services.message import ChatNotFoundError, list_messages, send_message
-from tests.chats import open_chat_id
+from tests.chats import open_chat_id, open_chat_of
 from tests.chat_tokens import DEFAULT_COMPANY_ID, bearer, caller_token, make_caller
 
 
@@ -154,3 +154,143 @@ async def test_non_participant_cannot_fetch_backlog_via_endpoint(client: AsyncCl
     )
 
     assert response.status_code == 404
+
+
+async def test_a_message_sent_without_naming_a_visibility_is_visible_to_all(
+    client: AsyncClient,
+):
+    _, token_a = caller_token()
+    headers_a = bearer(token_a)
+    user_b_id, _ = caller_token()
+    chat_id = await open_chat_id(client, headers_a, user_b_id)
+
+    response = await client.post(
+        f"/chats/{chat_id}/messages", json={"body": "oi"}, headers=headers_a
+    )
+
+    assert response.json()["visibility"] == "all"
+
+
+async def test_a_staff_only_message_is_refused_in_a_staff_chat(client: AsyncClient):
+    """Refused rather than quietly downgraded to an ordinary message.
+
+    A silent downgrade is the worse failure: the sender is told their message
+    was stored, believes it was restricted, and it was not. There is nobody in
+    a Staff Chat the restriction could exclude, so the request describes
+    something the service cannot do and says so.
+    """
+    _, token_a = caller_token()
+    headers_a = bearer(token_a)
+    user_b_id, _ = caller_token()
+    chat_id = await open_chat_id(client, headers_a, user_b_id)
+
+    response = await client.post(
+        f"/chats/{chat_id}/messages",
+        json={"body": "só a equipe", "visibility": "staff_only"},
+        headers=headers_a,
+    )
+
+    assert response.status_code == 422
+
+
+async def _client_chat_with_two_staff(client: AsyncClient) -> tuple[str, dict, dict, dict]:
+    """A Client Chat holding two of the Company's staff and one end client."""
+    _, token_a = caller_token()
+    headers_a = bearer(token_a)
+    staff_b_id, token_b = caller_token()
+    headers_b = bearer(token_b)
+    client_c_id, token_c = caller_token(user_kind="client")
+    headers_c = bearer(token_c)
+
+    created = await open_chat_of(
+        client,
+        headers_a,
+        (staff_b_id, "staff"),
+        (client_c_id, "client"),
+        chat_type="client",
+        name="Cliente e equipe",
+    )
+    return created.json()["id"], headers_a, headers_b, headers_c
+
+
+async def _bodies(client: AsyncClient, chat_id: str, headers: dict) -> list[str]:
+    response = await client.get(f"/chats/{chat_id}/messages", headers=headers)
+    assert response.status_code == 200
+    return [message["body"] for message in response.json()]
+
+
+async def test_a_staff_only_message_reaches_staff_and_not_the_end_client(
+    client: AsyncClient,
+):
+    """The whole of ticket 04 in one thread, read from both sides.
+
+    The Staff-only Message sits *between* two ordinary ones on purpose. An end
+    client who saw `["um", "dois"]` with a hole in the ordering would learn one
+    exists without reading it, which the rule forbids just as firmly — so the
+    assertion is on what they see, not merely on what they do not.
+    """
+    chat_id, headers_a, headers_b, headers_c = await _client_chat_with_two_staff(client)
+
+    for body, visibility in (("um", "all"), ("segredo", "staff_only"), ("dois", "all")):
+        sent = await client.post(
+            f"/chats/{chat_id}/messages",
+            json={"body": body, "visibility": visibility},
+            headers=headers_a,
+        )
+        assert sent.status_code == 201
+
+    assert await _bodies(client, chat_id, headers_a) == ["um", "segredo", "dois"]
+    assert await _bodies(client, chat_id, headers_b) == ["um", "segredo", "dois"]
+    assert await _bodies(client, chat_id, headers_c) == ["um", "dois"]
+
+
+async def test_an_end_client_cannot_write_a_staff_only_message(client: AsyncClient):
+    """Writing is the reading rule backwards, so this needs no rule of its own.
+
+    An end client who could write one would be writing something they could not
+    then read — and the Chat would hold a Staff-only Message from outside the
+    Company's staff, which is not what the words mean.
+    """
+    chat_id, _, _, headers_c = await _client_chat_with_two_staff(client)
+
+    response = await client.post(
+        f"/chats/{chat_id}/messages",
+        json={"body": "e eu?", "visibility": "staff_only"},
+        headers=headers_c,
+    )
+
+    assert response.status_code == 422
+
+
+async def _last_message_at(client: AsyncClient, chat_id: str, headers: dict) -> str | None:
+    response = await client.get("/chats", headers=headers)
+    assert response.status_code == 200
+    listed = next(chat for chat in response.json() if chat["id"] == chat_id)
+    return listed["last_message_at"]
+
+
+async def test_a_staff_only_message_does_not_stir_the_end_clients_chat_list(
+    client: AsyncClient,
+):
+    """Not learning one exists includes not watching the Chat twitch when one arrives.
+
+    `last_message_at` is both the timestamp shown beside a Chat and the key the
+    list is ordered by. Left unfiltered it would tick forward, and reorder the
+    list, every time staff said something the end client cannot read — which
+    announces the Staff-only Message without quoting it.
+    """
+    chat_id, headers_a, _, headers_c = await _client_chat_with_two_staff(client)
+    await client.post(
+        f"/chats/{chat_id}/messages", json={"body": "oi"}, headers=headers_a
+    )
+    before_for_client = await _last_message_at(client, chat_id, headers_c)
+    before_for_staff = await _last_message_at(client, chat_id, headers_a)
+
+    await client.post(
+        f"/chats/{chat_id}/messages",
+        json={"body": "segredo", "visibility": "staff_only"},
+        headers=headers_a,
+    )
+
+    assert await _last_message_at(client, chat_id, headers_c) == before_for_client
+    assert await _last_message_at(client, chat_id, headers_a) != before_for_staff

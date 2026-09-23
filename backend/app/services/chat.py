@@ -1,14 +1,17 @@
 import uuid
+from collections import defaultdict
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.chat_token import Caller
 from app.core.company_scope import CompanyScope
+from app.core.message_visibility import readable_visibilities
 from app.models.chat import STILL_IN_THE_CHAT, Chat, ChatType, Participant, ParticipantRole
-from app.models.message import Message
+from app.models.message import Message, MessageVisibility
 from app.schemas.chat import ChatCreate, ChatRead
 from app.services.realtime import publish_to_user
 
@@ -143,21 +146,68 @@ async def list_chats(
     )
     chats = list(result.all())
 
-    last_message_at = await get_last_message_at_by_chat(db, scope, [chat.id for chat in chats])
+    last_message_at = await get_last_message_at_by_chat(db, scope, visibilities_by_chat(caller, chats))
     listed = [ChatRead.of(chat, last_message_at.get(chat.id)) for chat in chats]
     listed.sort(key=lambda chat: chat.last_message_at or _UNIX_EPOCH, reverse=True)
     return listed
 
 
+def visibilities_by_chat(
+    caller: Caller, chats: Iterable[Chat]
+) -> dict[uuid.UUID, Sequence[MessageVisibility]]:
+    """What this caller may see in each of these Chats, asked of the one predicate."""
+    return {
+        chat.id: readable_visibilities(
+            reader_kind=caller.user_kind,
+            reader_company_id=caller.company_id,
+            chat_company_id=chat.company_id,
+            chat_type=chat.type,
+        )
+        for chat in chats
+    }
+
+
 async def get_last_message_at_by_chat(
-    db: AsyncSession, scope: CompanyScope, chat_ids: list[uuid.UUID]
+    db: AsyncSession,
+    scope: CompanyScope,
+    visible: Mapping[uuid.UUID, Sequence[MessageVisibility]],
 ) -> dict[uuid.UUID, datetime]:
-    if not chat_ids:
+    """When each Chat last carried something the reader may actually read.
+
+    Taking the visibilities rather than bare identifiers is what keeps a
+    Staff-only Message out of the end client's chat list. `last_message_at` is
+    the timestamp shown beside a Chat *and* the key it is ordered by, so an
+    unfiltered maximum would tick the Chat forward and float it to the top
+    every time staff said something the end client cannot read — announcing the
+    Staff-only Message without quoting it.
+
+    Chats are grouped by the set of visibilities rather than given a clause
+    each: a single reader has at most one set per Chat type, so the OR stays
+    two branches wide however long the list is.
+    """
+    if not visible:
         return {}
+
+    chat_ids_by_visibilities: dict[tuple[MessageVisibility, ...], list[uuid.UUID]] = (
+        defaultdict(list)
+    )
+    for chat_id, visibilities in visible.items():
+        chat_ids_by_visibilities[tuple(visibilities)].append(chat_id)
+
     result = await db.execute(
         scope.select(Message)
         .with_only_columns(Message.chat_id, func.max(Message.created_at))
-        .where(Message.chat_id.in_(chat_ids))
+        .where(
+            or_(
+                *(
+                    and_(
+                        Message.chat_id.in_(chat_ids),
+                        Message.visibility.in_(visibilities),
+                    )
+                    for visibilities, chat_ids in chat_ids_by_visibilities.items()
+                )
+            )
+        )
         .group_by(Message.chat_id)
     )
     return dict(result.all())
@@ -174,7 +224,14 @@ async def notify_participants(
     if chat is None:
         return
 
-    last_message_at = await get_last_message_at_by_chat(db, scope, [chat_id])
+    # Every current Participant gets the same summary, Staff-only Message
+    # included, because this is the live path and ticket 07 is what gives the
+    # Company's staff an address of their own. Until it lands, an end client's
+    # open chat list can twitch for a message their next `GET /chats` will not
+    # show them — the transport gap ticket 07 exists to close.
+    last_message_at = await get_last_message_at_by_chat(
+        db, scope, {chat_id: list(MessageVisibility)}
+    )
     payload = ChatRead.of(chat, last_message_at.get(chat_id)).model_dump_json()
 
     for participant in chat.current_participants:

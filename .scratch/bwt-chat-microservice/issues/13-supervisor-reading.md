@@ -13,3 +13,11 @@ The scope is resolved in the monolith, against a permission system the service d
 - [ ] Supervision never crosses a Company, whatever the claim says
 - [ ] A Supervisor's access to a Staff-only Message follows the same predicate as everyone else's, not a bypass
 - [ ] A caller without the scope reads nothing they are not a Participant of
+
+## Comments
+
+**2026-09-23 — nota vinda do ticket 04.**
+
+`may_read` (`backend/app/core/message_visibility.py`) classifica o leitor por `ParticipantRole(reader_kind)`, cujos membros são exatamente `staff | client`. Reusar o predicado para o Supervisor — em vez de abrir um desvio para ele, que é o que este ticket proíbe — só funciona se o token do Supervisor trouxer `user_kind: "staff"` e carregar a supervisão como **scope**, não como um terceiro kind.
+
+Se o monolito emitir `user_kind: "supervisor"`, o ramo default-deny entrega um serviço vazio a ele. É a falha barulhenta que o desenho prefere ao vazamento, mas confirme a forma do claim com o monolito antes de construir por cima.

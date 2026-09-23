@@ -4,8 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.chat_token import Caller
 from app.core.company_scope import CompanyScope
+from app.core.message_visibility import may_read, readable_visibilities
 from app.models.chat import STILL_IN_THE_CHAT, Chat, Participant
-from app.models.message import Message
+from app.models.message import Message, MessageVisibility
 from app.schemas.message import MessageCreate, WebhookMessageCreate
 from app.services.chat import notify_participants
 from app.services.realtime import publish_message
@@ -15,18 +16,53 @@ class ChatNotFoundError(Exception):
     pass
 
 
-async def assert_participant(
+class VisibilityNotAllowedError(Exception):
+    """The sender cannot address a Message this way in this Chat.
+
+    Writing is the reading rule read backwards: a sender may address a Message
+    only to a set they are themselves inside. That makes a Staff-only Message
+    in a Staff Chat a refusal (nobody there to exclude, so the restriction is
+    meaningless) and one written by an end client a refusal too (they would be
+    writing something they could not then read), without a second rule anybody
+    has to keep in step with `may_read`. It also means a sender whose user kind
+    the rule cannot classify writes nothing at all, ordinary messages included
+    — the default-deny branch reaching the write path by the same mechanism.
+
+    Refusing beats storing it as an ordinary message: a silent downgrade tells
+    the sender their message was restricted when it was not.
+    """
+
+    detail = "this sender cannot address a message this way in this chat"
+
+
+async def chat_of_participant(
     db: AsyncSession, scope: CompanyScope, chat_id: uuid.UUID, user_id: uuid.UUID
-) -> None:
-    participant = await db.scalar(
-        scope.select(Participant).where(
-            Participant.chat_id == chat_id,
+) -> Chat:
+    """The Chat, if this user is currently in it — the two questions in one trip.
+
+    Both reads now need the Chat itself and not merely permission to be there,
+    because the visibility rule is asked about the Chat's type. Asking twice
+    would put a second round trip on every send and every backlog fetch to
+    learn something the first query's row already knew.
+
+    A missing Chat, another Company's Chat and a Chat this user is not in are
+    one answer, which is the 404-not-403 decision in `docs/decisions.md`: the
+    refusal must not distinguish them. Send, backlog and the WebSocket handshake
+    all ask through here, so there is one spelling of "is currently in this
+    Chat" and the three cannot drift apart.
+    """
+    chat = await db.scalar(
+        scope.select(Chat)
+        .join(Participant, Participant.chat_id == Chat.id)
+        .where(
+            Chat.id == chat_id,
             Participant.user_id == user_id,
             STILL_IN_THE_CHAT,
         )
     )
-    if participant is None:
+    if chat is None:
         raise ChatNotFoundError()
+    return chat
 
 
 async def _persist_and_publish(
@@ -47,13 +83,23 @@ async def send_message(
     chat_id: uuid.UUID,
     data: MessageCreate,
 ) -> Message:
-    await assert_participant(db, scope, chat_id, caller.id)
+    chat = await chat_of_participant(db, scope, chat_id, caller.id)
+
+    if not may_read(
+        reader_kind=caller.user_kind,
+        reader_company_id=caller.company_id,
+        chat_company_id=chat.company_id,
+        chat_type=chat.type,
+        visibility=data.visibility,
+    ):
+        raise VisibilityNotAllowedError()
 
     message = Message(
         company_id=caller.company_id,
         chat_id=chat_id,
         sender_id=caller.id,
         sender_type="user",
+        visibility=data.visibility,
         body=data.body,
     )
     return await _persist_and_publish(db, scope, message)
@@ -80,6 +126,7 @@ async def send_external_message(db: AsyncSession, data: WebhookMessageCreate) ->
         sender_id=None,
         sender_type="external",
         source_label=data.source_label,
+        visibility=MessageVisibility.ALL,
         body=data.body,
     )
     return await _persist_and_publish(db, scope, message)
@@ -88,11 +135,21 @@ async def send_external_message(db: AsyncSession, data: WebhookMessageCreate) ->
 async def list_messages(
     db: AsyncSession, scope: CompanyScope, caller: Caller, chat_id: uuid.UUID
 ) -> list[Message]:
-    await assert_participant(db, scope, chat_id, caller.id)
+    chat = await chat_of_participant(db, scope, chat_id, caller.id)
 
     result = await db.scalars(
         scope.select(Message)
-        .where(Message.chat_id == chat_id)
+        .where(
+            Message.chat_id == chat_id,
+            Message.visibility.in_(
+                readable_visibilities(
+                    reader_kind=caller.user_kind,
+                    reader_company_id=caller.company_id,
+                    chat_company_id=chat.company_id,
+                    chat_type=chat.type,
+                )
+            ),
+        )
         .order_by(Message.created_at)
     )
     return list(result.all())

@@ -1,4 +1,11 @@
 from app.models.chat import Chat, ChatType, Participant, ParticipantRole
-from app.models.message import Message
+from app.models.message import Message, MessageVisibility
 
-__all__ = ["Chat", "ChatType", "Participant", "ParticipantRole", "Message"]
+__all__ = [
+    "Chat",
+    "ChatType",
+    "Participant",
+    "ParticipantRole",
+    "Message",
+    "MessageVisibility",
+]

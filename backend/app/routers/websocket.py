@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.chat_token import verify_chat_token
 from app.core.company_scope import CompanyScope
 from app.db import get_db
-from app.services.message import ChatNotFoundError, assert_participant
+from app.services.message import ChatNotFoundError, chat_of_participant
 from app.services.realtime import connection_manager
 
 router = APIRouter(prefix="/websocket", tags=["websocket"])
@@ -25,7 +25,7 @@ async def chat_socket(
         return
 
     try:
-        await assert_participant(db, CompanyScope.of(caller), chat_id, caller.id)
+        await chat_of_participant(db, CompanyScope.of(caller), chat_id, caller.id)
     except ChatNotFoundError:
         await websocket.close(code=1008)
         return
