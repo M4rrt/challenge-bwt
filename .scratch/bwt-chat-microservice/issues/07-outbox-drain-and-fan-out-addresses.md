@@ -51,3 +51,5 @@ O docstring afirmava ordem mais forte do que o código entrega — `created_at` 
 A exceção do guard de isolamento passou a ser **por entidade**: `services/outbox.py` pode ler `OutboxEvent` e só isso. Por arquivo, um `select(Chat)` crescendo lá dentro ficaria invisível — verifiquei que a versão nova aponta exatamente esse caso.
 
 Menores: o modelo declarava `index=True` em `address` e `published_at` sem índice correspondente na migração (a próxima autogeneração emitiria índices fantasmas); o índice de `address` foi removido de vez, porque nada consulta por ele e índice não consultado se paga em todo insert. O `idle_seconds` de `run_forever` não tinha chamador nem teste e virou a constante. O compose repetia as cinco variáveis do backend — agora é uma âncora YAML, e o drain ganhou `restart: unless-stopped`.
+
+**Consequência de deploy, agora rastreada no [20](20-the-drain-runs-in-production.md).** O request não publica mais, então um deploy sem o processo de drain rodando armazena tudo e entrega nada em tempo real — em silêncio. O `docker-compose.yml` ganhou o serviço `drain`; `infra/` ainda não.
