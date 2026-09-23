@@ -11,6 +11,7 @@ from app.services.chat import (
     create_chat,
     get_last_message_at_by_chat,
     list_chats,
+    visibilities_by_chat,
 )
 
 router = APIRouter(prefix="/chats", tags=["chats"])
@@ -27,7 +28,7 @@ async def create(
         chat = await create_chat(db, scope, caller, data)
     except ChatShapeError as refused:
         raise HTTPException(status_code=422, detail=refused.detail)
-    last_message_at = await get_last_message_at_by_chat(db, scope, [chat.id])
+    last_message_at = await get_last_message_at_by_chat(db, scope, visibilities_by_chat(caller, [chat]))
     return ChatRead.of(chat, last_message_at.get(chat.id))
 
 

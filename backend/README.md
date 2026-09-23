@@ -20,7 +20,7 @@ app/
 ├── schemas/    # formatos de request/response do Pydantic
 ├── services/   # lógica de negócio
 ├── core/       # config, helpers de segurança, fronteira de Company
-├── db.py       # engine async, session, declarative Base
+├── db.py       # engine async, session, declarative Base, helper de coluna enum
 └── main.py     # instância da aplicação FastAPI
 alembic/        # ambiente de migrations (async)
 tests/
@@ -141,6 +141,33 @@ uv run pytest
 
 As respostas de `Chat` retornam participantes ordenados por `user_id`, e essa ordenação é um `order_by` explícito no relacionamento, não um efeito colateral do plano de execução do Postgres — a distinção custou o RED de um teste de regressão do ticket 23, que passava mesmo sem o fix pretendido. `tests/test_chat_model.py` falha se o `order_by` sair.
 
+## Staff-only Message
+
+Uma **Staff-only Message** é uma mensagem dentro de um Client Chat visível só para os Participants da Company. O cliente final não a recebe e não descobre que ela existe.
+
+Essa é a regra com o pior histórico de falha do módulo de origem, registrado na [ADR-0008](../docs/adr/0008-domain-rewritten-in-fastapi.md): um Participant carregado por relação voltava como a classe-base de usuário, um `isinstance` respondia "não" para um funcionário, e a regra falhava **em silêncio nas duas direções** — às vezes tirando funcionários do próprio fan-out, às vezes mantendo um cliente final dentro dele.
+
+O que aquele bug era de verdade: a regra era avaliada em mais de um lugar, sobre um valor que ninguém tinha fixado. Então aqui ela é **uma função pura** em `app/core/message_visibility.py`, irmã de `company_scope.py`, sobre quatro argumentos e nada mais — sem sessão, sem relação para carregar, sem linha cuja classe possa surpreendê-la:
+
+```
+may_read(reader_kind, reader_company_id, chat_company_id, chat_type, visibility) -> bool
+```
+
+- Company do leitor diferente da Company do Chat → **não**.
+- `reader_kind` fora de `staff`/`client` → **não**, para toda visibilidade — e, porque a escrita passa pelo mesmo predicado, esse remetente também não escreve nada, nem mensagem comum. Esse é o ramo **default-deny**, e é a forma re-introduzível do bug: um token pode reivindicar qualquer kind e o serviço não tem tabela de usuários para conferir. Uma thread vazia é uma falha que alguém reporta; uma Staff-only Message vazada é uma que ninguém vê.
+- `visibility = all` → **sim**.
+- `visibility = staff_only` → só em Client Chat, e só para `staff`.
+
+O predicado não diz nada sobre pertencimento: se o leitor tem lugar no Chat é pergunta separada, respondida por `chat_of_participant` antes desta.
+
+**Nenhum caminho de leitura reescreve a regra.** `readable_visibilities` monta o `WHERE` perguntando ao próprio `may_read` sobre cada visibilidade, em vez de restatá-la em SQL — uma segunda grafia seria uma segunda coisa para manter em dia, e as duas divergiriam na primeira vez que só uma fosse atualizada. Três leituras passam por ela:
+
+- `GET /chats/{id}/messages` filtra o histórico. Como a ordenação é por `created_at` e não por posição, a mensagem omitida **não deixa buraco**: o cliente final vê uma lista contígua, sem nada indicando que faltou algo.
+- `GET /chats` tira `last_message_at` só do que o leitor pode ler. Esse campo é o timestamp exibido ao lado do Chat **e** a chave da ordenação — sem filtro ele avançaria e flutuaria o Chat para o topo toda vez que o staff dissesse algo que o cliente final não pode ler, anunciando a Staff-only Message sem citá-la.
+- `POST /chats/{id}/messages` valida a escrita com o **mesmo** predicado: quem escreve só endereça uma mensagem a um conjunto do qual faz parte. Isso torna `422` tanto uma staff-only num Staff Chat (não há ninguém lá para excluir, a restrição não significa nada) quanto uma escrita por cliente final (ele escreveria algo que não poderia depois ler) — sem uma segunda regra para alguém manter em dia. Recusar é melhor que guardar como mensagem comum: um rebaixamento silencioso diz ao remetente que a mensagem foi restrita quando não foi.
+
+`tests/test_message_visibility.py` cobre a tabela-verdade como função pura; `tests/test_messages.py` prova pela borda que ela está ligada. A regra é testada duas vezes de propósito — o teste de API prova a ligação, o unitário prova o ramo default-deny, que é quase inalcançável pela API.
+
 ## Isolamento por Company
 
 Nenhuma leitura atravessa uma Company. A [ADR-0007](../docs/adr/0007-own-database-company-boundary-in-code.md) tirou esse isolamento do banco e o deixou no código, e chamou isso de risco central da arquitetura: sem um queryset carregando o invariante, todo caminho de leitura precisa filtrar por Company explicitamente, e um que esqueça vaza os chats de uma Company para outra.
@@ -168,6 +195,7 @@ Não bloqueia o funcionamento hoje, mas seria o primeiro ponto de atenção ante
   foi aceito justamente para remover essa propriedade e ainda não está
   implementado. Ticket 19 troca por RS256 + `kid` + JWKS + `aud` obrigatório.
   Nada abaixo desta linha é um risco da mesma ordem.
+- **Uma Staff-only Message ainda vaza no WebSocket.** `publish_message` manda toda mensagem para o canal único `chat:{id}`, que todo Participant conectado lê, e o resumo de `user:{company_id}:{user_id}` carrega `last_message_at` sem filtro. A regra vale na API e ainda não no transporte. Fechar isso é o ticket 07, que dá à staff da Company um endereço próprio — o isolamento vem do endereço, não de um `if` que todo emissor futuro precise lembrar de escrever.
 - **Sem índice em `messages.chat_id`.** Nenhuma migração cria esse índice — `list_messages` (filtra por `chat_id`, ordena por `created_at`) e a busca da última mensagem por chat fazem table scan à medida que o histórico cresce.
 - **Índice de `participants` favorece a query errada.** O `UniqueConstraint(chat_id, user_id)` serve bem a checagem de membership, mas `list_chats` — chamada a cada carregamento da sidebar — filtra só por `user_id`; faltaria um índice dedicado liderado por esse campo.
 - **Sem rate limiting** em `/webhook/messages`.

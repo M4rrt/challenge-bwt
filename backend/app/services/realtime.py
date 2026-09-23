@@ -70,15 +70,7 @@ def _channel_for_user(company_id: uuid.UUID, user_id: uuid.UUID) -> str:
 
 
 async def publish_message(message: Message) -> None:
-    payload = MessageRead(
-        id=message.id,
-        chat_id=message.chat_id,
-        sender_id=message.sender_id,
-        sender_type=message.sender_type,
-        source_label=message.source_label,
-        body=message.body,
-        created_at=message.created_at,
-    ).model_dump_json()
+    payload = MessageRead.of(message).model_dump_json()
     await _publish_client.publish(_channel_for(message.chat_id), payload)
 
 

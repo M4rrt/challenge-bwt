@@ -2,11 +2,11 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, UniqueConstraint, Uuid, func
+from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.company_scope import CompanyScoped
-from app.db import Base
+from app.db import Base, stored_by_value
 
 
 class ChatType(StrEnum):
@@ -23,25 +23,6 @@ class ParticipantRole(StrEnum):
     CLIENT = "client"
 
 
-def _stored_by_value(enum: type[StrEnum], name: str) -> Enum:
-    """A VARCHAR column holding the enum's values, checked in the database.
-
-    Two defaults have to be overridden together. SQLAlchemy stores a Python
-    enum by member *name*, so `ChatType.STAFF` would land as `STAFF` while
-    every migration, payload and log says `staff` — invisible until something
-    reads the column without going through the mapper. And `create_constraint`
-    is off by default, which leaves the set of legal values as a claim the
-    schema does not make.
-    """
-    return Enum(
-        enum,
-        native_enum=False,
-        create_constraint=True,
-        values_callable=lambda members: [member.value for member in members],
-        name=name,
-    )
-
-
 class Chat(Base, CompanyScoped):
     """A container for messages between a set of Participants.
 
@@ -52,7 +33,7 @@ class Chat(Base, CompanyScoped):
     __tablename__ = "chats"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    type: Mapped[ChatType] = mapped_column(_stored_by_value(ChatType, "chat_type"))
+    type: Mapped[ChatType] = mapped_column(stored_by_value(ChatType, "chat_type"))
     name: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.clock_timestamp()
@@ -95,7 +76,7 @@ class Participant(Base, CompanyScoped):
     chat_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("chats.id"))
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid)
     role: Mapped[ParticipantRole] = mapped_column(
-        _stored_by_value(ParticipantRole, "participant_role")
+        stored_by_value(ParticipantRole, "participant_role")
     )
     joined_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.clock_timestamp()
