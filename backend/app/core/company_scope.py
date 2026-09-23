@@ -25,6 +25,7 @@ from typing import TypeVar
 from sqlalchemy import Select, Uuid, select
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.acting_user import ActingUser
 from app.core.chat_token import Caller
 
 
@@ -44,7 +45,13 @@ class CompanyScope:
     company_id: uuid.UUID
 
     @classmethod
-    def of(cls, caller: Caller) -> "CompanyScope":
+    def of(cls, caller: Caller | ActingUser) -> "CompanyScope":
+        """The Company of whoever the request is being served for.
+
+        A chat token names one and a composition command names the other, and
+        both arrive here rather than each building a scope of its own — the
+        boundary is one filter, not two spellings of one.
+        """
         return cls(company_id=caller.company_id)
 
     def select(self, entity: type[ScopedEntity]) -> Select[tuple[ScopedEntity]]:

@@ -133,6 +133,19 @@ da API/WebSocket atrás de `api.<var.domain_name>` não é. Adicionar um listene
 o mesmo certificado ACM; deliberadamente fora de escopo aqui já que o ticket 25 era sobre fechar as lacunas
 de hospedagem do frontend/autoscaling/DNS/state, não a segurança de transporte do ALB.
 
+## Lacuna conhecida: `/internal/*` ainda vem do ALB público
+
+Os comandos de composição (criar Chat, adicionar e remover Participant) são rotas internas: quem as chama
+é o monolito, com a credencial de serviço em `INTERNAL_SERVICE_TOKEN` (SSM, gerada em `ecs.tf`) e headers
+nomeando o usuário por quem está agindo. Hoje a credencial é a única tranca — o listener HTTP em
+`network.tf` encaminha tudo para o mesmo target group, `/internal/*` incluso.
+
+Fechar isso é o [ticket 18](../.scratch/bwt-chat-microservice/issues/18-operational-surface.md), e não é
+uma regra de listener isolada: o monolito ainda não tem presença nesta VPC, então bloquear `/internal/*`
+no ALB público hoje deixaria a composição **sem nenhum caminho de entrada** — o serviço aceitaria comandos
+que ninguém consegue mandar. As duas coisas andam juntas: o ingress por onde o monolito entra, e o
+fechamento do caminho público.
+
 ## Hospedagem do frontend
 
 `frontend.tf` provisiona um bucket S3 privado (sem acesso público) mais uma distribuição CloudFront lendo

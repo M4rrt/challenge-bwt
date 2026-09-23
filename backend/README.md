@@ -59,25 +59,113 @@ O vocabulário vem do `CONTEXT.md` na raiz — Chat, Company, Staff Chat, Client
 - **Participant** carrega Chat, identificador do usuário, Company, papel (`staff` | `client`), `joined_at`, `left_at` e o estado de leitura (`last_read_at`, `last_read_message_id`). O estado de leitura ainda não tem leitor: entra no ticket 09.
 - **Sair de um Chat é um instante, não um delete.** Com `left_at` preenchido a pessoa some de todo caminho de leitura sem que a linha seja apagada — as mensagens que ela mandou seguem atribuíveis e o Chat segue explicável. `STILL_IN_THE_CHAT` (`app/models/chat.py`) é a única grafia de "é Participant atual" em query, e `Chat.current_participants` a única em Python.
 
-### `POST /chats`
+### Composição é um comando, não um pedido do browser
 
-A criação pública ainda existe e é substituída pelo comando interno do ticket 05. O corpo nomeia o tipo do Chat e o kind de cada Participant, porque o serviço não tem tabela de usuários para consultar:
+Criar um Chat e adicionar ou remover um Participant deixaram de ser coisas que um browser pede ao serviço.
+O monolito valida contra dado vivo — pertencimento à Company, se a pessoa está ativa e, para um cliente
+final, a relação de contato no CRM, que é consulta impossível de espelhar — e então **chama o serviço**
+([ADR-0010](../docs/adr/0010-no-request-depends-on-the-monolith.md)). Nenhum caminho de request do serviço
+consulta o monolito, e esta é a operação onde dado velho doeria mais: quem entra num Chat lê tudo que foi
+dito nele desde que ele foi criado.
 
-```json
+Não existe endpoint público que crie Chat ou adicione Participant, e não existe endpoint que **liste quem
+pode participar** — quem é cliente de uma Company é fato de CRM, não fato de chat, e espelhar isso seria
+espelhar a agenda de contatos e a rotatividade dela. `tests/test_composition_commands.py` falha se qualquer
+uma das duas voltar.
+
+#### As três rotas internas
+
+Todas sob `/internal`, autenticadas por `Authorization: Bearer $INTERNAL_SERVICE_TOKEN` e por **dois headers
+nomeando o usuário por quem o monolito age**:
+
+| Header | O quê |
+| --- | --- |
+| `X-Acting-User` | identificador de quem está agindo |
+| `X-Acting-Company` | a Company dele — id de usuário sozinho não nomeia ninguém aqui, o mesmo id pode existir em duas Companies |
+
+Faltar qualquer um dos dois é recusa (`401`), não default: não existe Chat sem autor, e é isso que impede a
+credencial de serviço de virar uma credencial onipotente — ela não amplia o que pode ser feito, só permite
+fazer em nome de alguém identificado. A Company nomeada no header é a Company em que o comando escreve.
+
+- `POST /internal/chats` — cria o Chat.
+- `POST /internal/chats/{id}/participants` — coloca alguém no Chat.
+- `DELETE /internal/chats/{id}/participants/{user_id}` — tira alguém do Chat.
+
+O comando **carrega a identidade de cada Participant** (identificador, Company, kind, display name, avatar),
+porque o monolito já tinha esse dado em mãos para validar — mandar junto não custa nada e elimina o único
+caso que forçaria o serviço a perguntar de volta. `display_name` é obrigatório: um comando que nomeia só um
+identificador descreve alguém que o serviço nunca conseguiria renderizar. O display name e o avatar ainda
+não são guardados — a projeção de identidade é o ticket 06 — e o contrato do payload está fixado aqui para
+que aquele ticket não mexa no formato do fio.
+
+```http
+POST /internal/chats
+Authorization: Bearer <INTERNAL_SERVICE_TOKEN>
+X-Acting-User: <uuid>
+X-Acting-Company: <uuid>
+
 {
   "type": "staff",
-  "participants": [{ "user_id": "<uuid>", "user_kind": "staff" }],
-  "name": null
+  "name": null,
+  "participants": [
+    {
+      "user_id": "<uuid>",
+      "company_id": "<uuid>",
+      "user_kind": "staff",
+      "display_name": "Ana Souza",
+      "avatar_url": null
+    }
+  ]
 }
 ```
 
-Quem chama entra como Participant com o `user_kind` do próprio token — esse claim o comando não escolhe. O serviço valida a **forma** do Chat, que é invariante dele e não do chamador, e responde `422` quando ela não fecha:
+O Chat guarda quem foi composto por ele: `chats.created_by_user_id` recebe o `X-Acting-User` do comando.
+Nada lê essa coluna num caminho de request — ela existe para que "não existe Chat sem autor" seja respondível
+depois, e não só barrado na porta. Nulo lá significa um Chat anterior ao ticket 05, aberto por um browser com
+token próprio, de quem o serviço nunca soube o nome.
+
+O comando nomeia **todo mundo** e o serviço não acrescenta ninguém — inclusive quem está agindo, se ele
+estiver no Chat. A resposta é o Chat como o comando o deixou (`id`, `type`, `name`, `participant_user_ids`)
+e não carrega `last_message_at`: esse campo é relativo ao leitor — é o timestamp da última mensagem que
+*aquele* leitor pode ver — e um comando não tem leitor para preenchê-lo.
+
+#### O que o serviço valida, e o que ele não revalida
+
+O serviço não revalida o que quem assinou o comando já é autoridade sobre. Ele valida a **forma** do Chat,
+que é invariante dele, e responde `422`:
 
 - `a staff chat cannot contain an end client` — Staff Chat é definido pela ausência do cliente final.
 - `name is required for group chats` — grupo (3+ Participants) precisa de nome; 1:1 não.
-- `unrecognised user kind` — um kind fora de `staff`/`client` não tem lugar em regras escritas nessas duas palavras.
+- `a participant from outside the company the command acts for` — o Chat e seus Participants respondem à
+  mesma fronteira, ou o comando falha; se pudessem divergir, `list_chats` juntaria através de Companies.
+- um `user_kind` fora de `staff`/`client` não tem lugar em regras escritas nessas duas palavras, e o schema
+  o recusa antes de virar linha.
 
-Abrir um 1:1 que já existe devolve o Chat existente ([ADR-0002](../docs/adr/0002-explicit-idempotent-chat-creation.md)). Se alguém saiu dele, aquele 1:1 já não existe como tal e um Chat novo é criado — devolver o antigo readmitiria em silêncio quem saiu.
+A forma é propriedade do Chat, não do instante em que ele foi alcançado: `_validate_shape` é a mesma função
+na criação e na adição. Checada só na entrada, a regra teria atalho — abra o Staff Chat, depois adicione o
+cliente — e a regra de visibilidade do ticket 04 leria um Chat cujo tipo diz que não há de quem esconder uma
+Staff-only Message. É por isso que `POST /internal/chats/{id}/participants` aceita um `name`: adicionar um
+terceiro transforma um 1:1 em grupo, e mandar o nome junto é um ato de composição em vez de dois.
+
+#### Repetir um comando
+
+Composição chega **at-least-once**, então repetir é o comando já ter dado certo, e não um erro:
+
+- abrir um 1:1 que já existe devolve o Chat existente ([ADR-0002](../docs/adr/0002-explicit-idempotent-chat-creation.md));
+  se alguém saiu dele, aquele 1:1 já não existe como tal e um Chat novo é criado — devolver o antigo
+  readmitiria em silêncio quem saiu;
+- adicionar quem já está no Chat não muda nada; nomear de novo quem saiu **revive a linha** em vez de criar
+  uma segunda, que é a única leitura que a unique constraint em (Chat, usuário) permite;
+- remover quem já saiu não move o instante em que ele saiu — uma reentrega não é uma segunda saída;
+- remover quem nunca esteve lá é `404`, igual a um Chat de outra Company e a um Chat que não existe.
+
+#### Monolito fora do ar
+
+Composição falha e todo Chat existente continua mandando e recebendo normalmente. Isso não é disciplina, é
+estrutural: `tests/test_composition_commands.py` falha se qualquer módulo de `app/` passar a importar um
+cliente HTTP, porque no instante em que um existe aqui dentro, o primeiro "só pergunta pro monolito se esse
+usuário ainda está ativo" está a uma linha de distância — e vai ser escrito dentro de um request, onde o
+monolito lento vira o chat lento.
 
 ## Tempo real: outbox, drain e três endereços
 
@@ -222,6 +310,17 @@ Não bloqueia o funcionamento hoje, mas seria o primeiro ponto de atenção ante
   Nada abaixo desta linha é um risco da mesma ordem.
 - **Uma linha ruim para o tempo real inteiro.** `drain_once` sempre pega a linha pendente **mais antiga**. Se publicá-la falhar de forma permanente, `run_forever` captura, dorme e pega a mesma linha de novo — para sempre — e tudo atrás dela nunca sai. Não é entrega degradada: é tempo real parado para o serviço todo por causa de uma linha. Hoje o drain só faz `redis.publish`, onde o que falha é conexão e isso derruba todas as linhas igualmente, então o raio é grande e a probabilidade baixa; ela sobe no ticket 15, que põe HTTP para o monólito no mesmo caminho. Ticket 21.
 - **A tabela `outbox` cresce sem coletor.** A linha publicada fica com `published_at` preenchida em vez de ser apagada, o que dá rastro de o que saiu e quando — é o que o ticket 18 monitora e o que responde "esse evento saiu?" depois de um incidente. Nada poda as linhas antigas ainda. O índice do drain é parcial (`WHERE published_at IS NULL`), então a varredura não degrada junto; o que cresce é o disco. Ticket 21.
+- **As rotas internas não são inalcançáveis da internet, só autenticadas.** O ALB do `infra/` encaminha todo
+  caminho para o mesmo target group, `/internal/*` incluso, e a credencial de serviço é a única tranca. Bloquear
+  o caminho público hoje deixaria a composição sem nenhuma entrada — o monolito ainda não tem presença na VPC —
+  então as duas metades andam juntas no ticket 18: por onde o monolito entra, e o fechamento da rua.
+- **Criar grupo não é idempotente.** O 1:1 devolve o Chat existente ([ADR-0002](../docs/adr/0002-explicit-idempotent-chat-creation.md)),
+  mas um comando de criação de grupo reentregue cria um segundo Chat com as mesmas pessoas e o mesmo nome.
+  A composição chega at-least-once; adicionar e remover são idempotentes, criar grupo não é. O que resolve é
+  uma chave de idempotência no comando, como a do ticket 08 para mensagens.
+- **Entrar e sair de um Chat não são atribuídos.** O Chat guarda quem o compôs (`chats.created_by_user_id`),
+  mas `participants` não guarda quem adicionou nem quem removeu — nesses dois comandos o `X-Acting-User`
+  continua sendo só condição para passar.
 - **O drain não existe fora do `docker-compose.yml`.** `infra/` define uma task definition e um service, ambos `backend`. Um deploy sem o processo de drain armazena tudo e entrega nada em tempo real, em silêncio. Ticket 20.
 - **Sem índice em `messages.chat_id`.** Nenhuma migração cria esse índice — `list_messages` (filtra por `chat_id`, ordena por `created_at`) e a busca da última mensagem por chat fazem table scan à medida que o histórico cresce.
 - **Índice de `participants` favorece a query errada.** O `UniqueConstraint(chat_id, user_id)` serve bem a checagem de membership, mas `list_chats` — chamada a cada carregamento da sidebar — filtra só por `user_id`; faltaria um índice dedicado liderado por esse campo.

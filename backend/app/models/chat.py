@@ -35,6 +35,14 @@ class Chat(Base, CompanyScoped):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     type: Mapped[ChatType] = mapped_column(stored_by_value(ChatType, "chat_type"))
     name: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    """Who the monolith was acting for when this Chat was composed.
+
+    Null means the Chat predates composition being a command: it was opened by a
+    browser holding its own token and the service never recorded whose. Nothing
+    reads this on a request path — it is here so that "there is no Chat without
+    an author" is answerable afterwards and not only enforced at the door.
+    """
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.clock_timestamp()
     )

@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
     webhook_hmac_secret: str
+    internal_service_token: str
     frontend_origin: str = "http://localhost:5173"
 
 

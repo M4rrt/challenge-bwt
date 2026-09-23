@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.routers import auth, chats, messages, webhook, websocket
+from app.routers import auth, chats, internal, messages, webhook, websocket
 from app.services.realtime import run_subscriber
 
 
@@ -33,6 +33,7 @@ app.add_middleware(
 )
 app.include_router(auth.router)
 app.include_router(chats.router)
+app.include_router(internal.router)
 app.include_router(messages.router)
 app.include_router(webhook.router)
 app.include_router(websocket.router)

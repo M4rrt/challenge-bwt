@@ -5,6 +5,7 @@ x-backend-env: &backend-env
   REDIS_URL: redis://redis:6379/0
   JWT_SECRET_KEY: change-me
   WEBHOOK_HMAC_SECRET: change-me
+  INTERNAL_SERVICE_TOKEN: change-me
   PYTHONDONTWRITEBYTECODE: 1
 
 services:

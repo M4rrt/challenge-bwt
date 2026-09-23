@@ -8,13 +8,9 @@ from app.core.message_visibility import may_read, readable_visibilities
 from app.models.chat import STILL_IN_THE_CHAT, Chat, Participant
 from app.models.message import Message, MessageVisibility
 from app.schemas.message import MessageCreate, MessageRead, WebhookMessageCreate
-from app.services.chat import enqueue_chat_summaries
+from app.services.chat import ChatNotFoundError, enqueue_chat_summaries
 from app.services.outbox import enqueue
 from app.services.realtime import address_for_chat, address_for_chat_staff
-
-
-class ChatNotFoundError(Exception):
-    pass
 
 
 class VisibilityNotAllowedError(Exception):
