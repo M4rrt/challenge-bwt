@@ -8,6 +8,11 @@ resource "random_password" "webhook_hmac_secret" {
   special = false
 }
 
+resource "random_password" "internal_service_token" {
+  length  = 48
+  special = false
+}
+
 resource "aws_ssm_parameter" "jwt_secret_key" {
   name  = "/${var.project}/${var.environment}/jwt_secret_key"
   type  = "SecureString"
@@ -25,6 +30,16 @@ resource "aws_ssm_parameter" "webhook_hmac_secret" {
 
   tags = {
     Name = "${local.name}-webhook-hmac-secret"
+  }
+}
+
+resource "aws_ssm_parameter" "internal_service_token" {
+  name  = "/${var.project}/${var.environment}/internal_service_token"
+  type  = "SecureString"
+  value = random_password.internal_service_token.result
+
+  tags = {
+    Name = "${local.name}-internal-service-token"
   }
 }
 
@@ -77,6 +92,7 @@ resource "aws_iam_role_policy" "ecs_task_execution_ssm" {
           aws_ssm_parameter.redis_url.arn,
           aws_ssm_parameter.jwt_secret_key.arn,
           aws_ssm_parameter.webhook_hmac_secret.arn,
+          aws_ssm_parameter.internal_service_token.arn,
         ]
       },
       {
@@ -115,6 +131,7 @@ resource "aws_ecs_task_definition" "backend" {
         { name = "REDIS_URL", valueFrom = aws_ssm_parameter.redis_url.arn },
         { name = "JWT_SECRET_KEY", valueFrom = aws_ssm_parameter.jwt_secret_key.arn },
         { name = "WEBHOOK_HMAC_SECRET", valueFrom = aws_ssm_parameter.webhook_hmac_secret.arn },
+        { name = "INTERNAL_SERVICE_TOKEN", valueFrom = aws_ssm_parameter.internal_service_token.arn },
       ]
 
       logConfiguration = {

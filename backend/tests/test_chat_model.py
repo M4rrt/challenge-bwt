@@ -1,10 +1,13 @@
 """What Chat and Participant carry, as `CONTEXT.md` and the spec describe them.
 
-Read state and the moment a Participant left have no reader yet — tickets 09
-and 05 add them. They are asserted here anyway, because the checklist this
-ticket is built from names them as things the entities *carry*, and a column
-that arrives one ticket late is a migration against live rows rather than a
-column definition.
+Read state has no reader yet — ticket 09 adds it. It is asserted here anyway,
+because the checklist this file is built from names it as something the entity
+*carries*, and a column that arrives one ticket late is a migration against live
+rows rather than a column definition.
+
+`created_by_user_id` has no reader either, and never will have one on a request
+path: it is there so that "there is no Chat without an author" is answerable
+after the fact and not only enforced at the door.
 """
 
 import sqlalchemy as sa
@@ -18,10 +21,18 @@ def test_participants_relationship_orders_by_user_id():
     assert relationship.order_by == (Participant.user_id,)
 
 
-def test_a_chat_carries_its_company_type_name_and_timestamps():
+def test_a_chat_carries_its_company_type_name_author_and_timestamps():
     columns = set(sa.inspect(Chat).columns.keys())
 
-    assert columns == {"id", "company_id", "type", "name", "created_at", "updated_at"}
+    assert columns == {
+        "id",
+        "company_id",
+        "type",
+        "name",
+        "created_by_user_id",
+        "created_at",
+        "updated_at",
+    }
 
 
 def test_a_participant_carries_its_chat_user_company_role_and_read_state():

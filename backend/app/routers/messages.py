@@ -8,12 +8,8 @@ from app.core.company_scope import CompanyScope
 from app.core.security import get_company_scope, get_current_caller
 from app.db import get_db
 from app.schemas.message import MessageCreate, MessageRead
-from app.services.message import (
-    ChatNotFoundError,
-    VisibilityNotAllowedError,
-    list_messages,
-    send_message,
-)
+from app.services.chat import ChatNotFoundError
+from app.services.message import VisibilityNotAllowedError, list_messages, send_message
 
 router = APIRouter(prefix="/chats/{chat_id}/messages", tags=["messages"])
 

@@ -7,12 +7,13 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.acting_user import ActingUser
 from app.core.chat_token import Caller
 from app.core.company_scope import CompanyScope
 from app.core.message_visibility import readable_visibilities
 from app.models.chat import STILL_IN_THE_CHAT, Chat, ChatType, Participant, ParticipantRole
 from app.models.message import Message, MessageVisibility
-from app.schemas.chat import ChatCreate, ChatRead
+from app.schemas.chat import AddParticipantCommand, ChatCommand, ChatRead, ParticipantIdentity
 from app.services.outbox import enqueue
 from app.services.realtime import address_for_user
 
@@ -31,6 +32,15 @@ class ChatShapeError(Exception):
     detail = "invalid chat"
 
 
+class ChatNotFoundError(Exception):
+    """No Chat by that identifier in this Company.
+
+    A Chat that never existed and a Chat belonging to somebody else are the
+    same answer, which is the 404-not-403 decision: the refusal must not
+    distinguish them.
+    """
+
+
 class GroupNameRequiredError(ChatShapeError):
     detail = "name is required for group chats"
 
@@ -39,8 +49,12 @@ class ClientInStaffChatError(ChatShapeError):
     detail = "a staff chat cannot contain an end client"
 
 
-class UnknownUserKindError(ChatShapeError):
-    detail = "unrecognised user kind"
+class EmptyChatError(ChatShapeError):
+    detail = "a chat needs at least one participant"
+
+
+class ForeignCompanyError(ChatShapeError):
+    detail = "a participant from outside the company the command acts for"
 
 
 async def _find_existing_one_to_one(
@@ -85,39 +99,73 @@ async def _find_existing_one_to_one(
     )
 
 
-def _roles_by_user(caller: Caller, data: ChatCreate) -> dict[uuid.UUID, ParticipantRole]:
-    """Every Participant's role, with the caller's taken from their own token.
+def _role_inside_the_company(
+    scope: CompanyScope, participant: ParticipantIdentity
+) -> ParticipantRole:
+    """This Participant's role, refusing them if they belong to another Company.
 
-    The command names the others because the service has no user table to look
-    them up in, but it does not get to name the caller: that claim is one the
-    monolith already signed.
+    The command carries each Participant's Company and the service files them
+    under the one it is acting for. Those two have to be the same: a Chat whose
+    members answered to a different boundary than the Chat itself would have
+    `list_chats` joining across Companies, which is the one thing ADR-0007 says
+    the code now has to carry on its own.
     """
-    try:
-        caller_role = ParticipantRole(caller.user_kind)
-    except ValueError:
-        raise UnknownUserKindError() from None
+    if participant.company_id != scope.company_id:
+        raise ForeignCompanyError()
+    return participant.user_kind
 
-    named = {participant.user_id: participant.user_kind for participant in data.participants}
-    return named | {caller.id: caller_role}
+
+def _roles_inside_the_company(
+    scope: CompanyScope, participants: Iterable[ParticipantIdentity]
+) -> dict[uuid.UUID, ParticipantRole]:
+    return {
+        participant.user_id: _role_inside_the_company(scope, participant)
+        for participant in participants
+    }
+
+
+def _validate_shape(
+    chat_type: ChatType, name: str | None, roles: Mapping[uuid.UUID, ParticipantRole]
+) -> None:
+    """What the service is the authority on, asked in one place.
+
+    Creating and adding both end up here, because the shape of a Chat is a
+    property of the Chat and not of the moment it was reached: a Chat that a
+    third Participant may be added to without a name is an unnamed group, and a
+    rule only enforced on the way in is a rule with a way around it.
+
+    Removing does not come through here, and that is deliberate. "A Chat is
+    composed with somebody in it" is a rule about composing one; a Chat everyone
+    has since left is not malformed, it is over — the rows stay, the messages
+    stay attributable, and refusing the last departure would only trap the last
+    person in a Chat they asked to leave.
+    """
+    if chat_type is ChatType.STAFF and ParticipantRole.CLIENT in roles.values():
+        raise ClientInStaffChatError()
+
+    if len(roles) > 2 and not name:
+        raise GroupNameRequiredError()
 
 
 async def create_chat(
-    db: AsyncSession, scope: CompanyScope, caller: Caller, data: ChatCreate
+    db: AsyncSession, scope: CompanyScope, acting: ActingUser, command: ChatCommand
 ) -> Chat:
-    roles = _roles_by_user(caller, data)
-
-    if data.type is ChatType.STAFF and ParticipantRole.CLIENT in roles.values():
-        raise ClientInStaffChatError()
-
-    if len(roles) > 2 and not data.name:
-        raise GroupNameRequiredError()
+    roles = _roles_inside_the_company(scope, command.participants)
+    if not roles:
+        raise EmptyChatError()
+    _validate_shape(command.type, command.name, roles)
 
     if len(roles) == 2:
-        existing = await _find_existing_one_to_one(db, scope, set(roles), data.type)
+        existing = await _find_existing_one_to_one(db, scope, set(roles), command.type)
         if existing is not None:
             return existing
 
-    chat = Chat(company_id=scope.company_id, type=data.type, name=data.name)
+    chat = Chat(
+        company_id=scope.company_id,
+        type=command.type,
+        name=command.name,
+        created_by_user_id=acting.id,
+    )
     chat.participants = [
         Participant(company_id=scope.company_id, user_id=user_id, role=role)
         for user_id, role in roles.items()
@@ -128,10 +176,110 @@ async def create_chat(
     # a session closed with work open rolls it back — so the Chat would exist
     # and nobody would be told it had been created.
     db.add(chat)
+    await _announce_and_commit(db, scope, chat)
+    return chat
+
+
+async def _announce_and_commit(db: AsyncSession, scope: CompanyScope, chat: Chat) -> None:
+    """Write the composition down and tell everyone still in the Chat.
+
+    Flush for the identifiers, enqueue, and commit once — enqueueing after the
+    commit would write the rows into a transaction nothing ever commits, since
+    `get_db` closes the session and a session closed with work open rolls it
+    back, so the Chat would change and nobody would be told.
+    """
     await db.flush()
     await db.refresh(chat, attribute_names=["participants"])
     await enqueue_chat_summaries(db, scope, chat.id)
     await db.commit()
+
+
+async def _chat_in_scope(db: AsyncSession, scope: CompanyScope, chat_id: uuid.UUID) -> Chat:
+    chat = await db.scalar(
+        scope.select(Chat).where(Chat.id == chat_id).options(selectinload(Chat.participants))
+    )
+    if chat is None:
+        raise ChatNotFoundError()
+    return chat
+
+
+async def add_participant(
+    db: AsyncSession, scope: CompanyScope, chat_id: uuid.UUID, command: AddParticipantCommand
+) -> Chat:
+    """Put the named person in the Chat, and answer the same way twice.
+
+    Composition arrives at-least-once, so naming somebody who is already in the
+    Chat is the command having already succeeded, not an error — and it stays
+    silent, because every Participant's chat list is pushed when composition
+    changes and a redelivery would move every open list for no reason.
+
+    Somebody who left and is named again comes back rather than gaining a second
+    row: leaving is recorded on the row and not by deleting it, so reviving it is
+    the only reading the unique constraint on (Chat, user) leaves for "add them
+    back".
+    """
+    chat = await _chat_in_scope(db, scope, chat_id)
+    role = _role_inside_the_company(scope, command.participant)
+    user_id = command.participant.user_id
+
+    participant = next((p for p in chat.participants if p.user_id == user_id), None)
+    joining = participant is None or participant.left_at is not None
+
+    # Whoever is already in the Chat keeps the role they joined with. The command
+    # names a kind because the service has no user table to look one up in, not
+    # because it re-decides what somebody in the Chat already is — a user whose
+    # kind changes is an identity event, which is ticket 06.
+    roles = {p.user_id: p.role for p in chat.current_participants}
+    if joining:
+        roles[user_id] = role
+
+    # A name only answers the group rule, and only fills a gap. Moving one that
+    # is already set would be a rename — a different command from a different
+    # intention — and adopting one on a Chat that is still a 1:1 would let a
+    # redelivery name a Chat nobody asked to name.
+    name = chat.name or (command.name if len(roles) > 2 else None)
+    _validate_shape(chat.type, name, roles)
+
+    if not joining and name == chat.name:
+        return chat
+
+    if participant is None:
+        chat.participants.append(
+            Participant(company_id=scope.company_id, user_id=user_id, role=role)
+        )
+    elif joining:
+        participant.left_at = None
+        participant.role = role
+    chat.name = name
+
+    await _announce_and_commit(db, scope, chat)
+    return chat
+
+
+class ParticipantNotFoundError(Exception):
+    """Nobody by that identifier has ever been in this Chat."""
+
+
+async def remove_participant(
+    db: AsyncSession, scope: CompanyScope, chat_id: uuid.UUID, user_id: uuid.UUID
+) -> Chat:
+    """Record that this person is no longer in the Chat.
+
+    Leaving is a moment, not a deletion: the row stays so the messages they sent
+    remain attributable and a Chat they were once in stays explicable. A command
+    naming somebody who has already left is that command having already
+    succeeded — the moment they left is not moved, because a redelivery is not a
+    second departure.
+    """
+    chat = await _chat_in_scope(db, scope, chat_id)
+
+    participant = next((p for p in chat.participants if p.user_id == user_id), None)
+    if participant is None:
+        raise ParticipantNotFoundError()
+
+    if participant.left_at is None:
+        participant.left_at = datetime.now(timezone.utc)
+        await _announce_and_commit(db, scope, chat)
     return chat
 
 

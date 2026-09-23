@@ -246,6 +246,12 @@ async def test_a_caller_with_no_company_reaches_nothing(client: AsyncClient):
 
     The refusal happens while the Caller is being built, not at each read: a
     token whose chat claims name no Company never becomes a caller at all.
+
+    Composition is not in this list any more. Since ticket 05 it is not a path a
+    token reaches at all — it is a command on the internal ingress, and the
+    Company it writes into is named by the monolith rather than read off a
+    token. `test_a_command_naming_a_participant_from_another_company_is_refused`
+    is where that boundary is held now.
     """
     _, token = caller_token(company_id=OMITTED)
     headers = bearer(token)
@@ -254,7 +260,6 @@ async def test_a_caller_with_no_company_reaches_nothing(client: AsyncClient):
     responses = [
         await client.get("/auth/me", headers=headers),
         await client.get("/chats", headers=headers),
-        await open_chat(client, headers),
         await client.get(f"/chats/{chat_id}/messages", headers=headers),
         await client.post(
             f"/chats/{chat_id}/messages", json={"body": "oi"}, headers=headers
@@ -366,19 +371,20 @@ def test_chat_and_participant_are_both_company_scoped():
     assert {"Chat", "Participant"} <= _scoped_model_names()
 
 
-async def test_creating_a_chat_files_every_participant_under_the_callers_company(
+async def test_creating_a_chat_files_every_participant_under_one_company(
     client: AsyncClient, db_session: AsyncSession
 ):
-    """A Participant's Company comes from the caller's token, not from the command.
+    """A Chat and its Participants answer to the same boundary.
 
-    The command names user identifiers, and an identifier says nothing about
-    which Company the row belongs in. If a Participant could be filed under
-    another Company, the Chat and its members would answer to two different
-    boundaries and `list_chats` would join across them.
+    The command carries each Participant's Company, and the service files them
+    under the Company it was sent to act for. If those could differ, the Chat
+    and its members would answer to two boundaries at once and `list_chats`
+    would join across them — so a command that mixes Companies is refused
+    rather than quietly filed under one of them.
     """
     company_x = uuid.uuid4()
     _, token_a = caller_token(company_id=company_x)
-    user_b_id, _ = caller_token(company_id=uuid.uuid4())
+    user_b_id, _ = caller_token(company_id=company_x)
 
     chat_id = (await open_chat(client, bearer(token_a), user_b_id)).json()["id"]
 

@@ -1,11 +1,65 @@
-"""Opening a Chat over the API, without every test restating the command's shape.
+"""Opening a Chat the way the monolith does, without every test restating the command.
 
 Three test modules used to carry their own copy of this, so each change to the
 create command was a change in four places — which is how a payload shape ends
 up being asserted by nobody in particular.
+
+Since ticket 05 a Chat is composed by a command on the internal ingress, not by
+a browser, so what these helpers send is a command. The call sites still read as
+"A opens a Chat with B", which is what those tests are about; `acting_user`
+below is how the person's token becomes the identity the monolith would be
+acting for.
 """
 
 from httpx import AsyncClient, Response
+
+from app.core.chat_token import Caller, verify_chat_token
+from app.core.config import settings
+from tests.chat_tokens import DEFAULT_COMPANY_ID
+
+
+def service_credential() -> dict[str, str]:
+    """What the monolith holds, and nobody else does."""
+    return {"Authorization": f"Bearer {settings.internal_service_token}"}
+
+
+def acting_for(user_id: str, company_id: str) -> dict[str, str]:
+    """A command's whole authority: the credential, and the user it is sent for."""
+    return service_credential() | {
+        "X-Acting-User": user_id,
+        "X-Acting-Company": company_id,
+    }
+
+
+def identity(
+    user_id: str,
+    user_kind: str = "staff",
+    *,
+    company_id: str | None = None,
+    display_name: str = "Ana Souza",
+    avatar_url: str | None = None,
+) -> dict[str, object]:
+    """One Participant as the monolith knows them, having just validated them."""
+    return {
+        "user_id": user_id,
+        "company_id": company_id or str(DEFAULT_COMPANY_ID),
+        "user_kind": user_kind,
+        "display_name": display_name,
+        "avatar_url": avatar_url,
+    }
+
+
+def acting_user(headers: dict[str, str]) -> Caller:
+    """Who these headers belong to, as the monolith would know them.
+
+    Tests hold a chat token because that is how they say "as this person"; the
+    monolith holds the same identity from having just validated it against live
+    data. Reading it back out here keeps every call site telling its own story —
+    A opens a Chat with B — while what actually goes out is a command.
+    """
+    caller = verify_chat_token(headers["Authorization"].removeprefix("Bearer "))
+    assert caller is not None, "the monolith only sends commands for users it could identify"
+    return caller
 
 
 async def open_chat(
@@ -37,17 +91,32 @@ async def open_chat_of(
 
     A Client Chat that the visibility rule is worth testing in has both kinds
     in it at once, which the single-kind spelling above cannot express.
+
+    The acting user is put in the Chat as well, with the kind their token
+    carries. The command itself has no such rule — it names everyone, and the
+    service adds nobody — but "A opens a Chat with B" means a Chat with A in it,
+    and that is the sentence these tests are written in.
     """
+    actor = acting_user(headers)
     return await client.post(
-        "/chats",
+        "/internal/chats",
         json={
             "type": chat_type,
             "participants": [
-                {"user_id": user_id, "user_kind": kind} for user_id, kind in members
+                identity(
+                    str(actor.id),
+                    actor.user_kind,
+                    company_id=str(actor.company_id),
+                    display_name=actor.display_name or "Ana Souza",
+                ),
+                *(
+                    identity(user_id, kind, company_id=str(actor.company_id))
+                    for user_id, kind in members
+                ),
             ],
             "name": name,
         },
-        headers=headers,
+        headers=acting_for(str(actor.id), str(actor.company_id)),
     )
 
 

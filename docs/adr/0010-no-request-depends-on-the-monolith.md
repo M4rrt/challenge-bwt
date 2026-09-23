@@ -1,6 +1,19 @@
 # No request of the service depends on the monolith
 
-**Status:** accepted
+**Status:** accepted — composition implemented by ticket 05.
+
+> **What is shipped, and what is not.** The composition half below is the running
+> code: `/internal/chats` and `/internal/chats/{id}/participants` take the
+> command, the service credential and the acting-user headers, no public endpoint
+> creates a Chat or adds a Participant, and none lists who may participate. No
+> module of `app/` holds an HTTP client, which is what keeps the "no synchronous
+> dependency" claim structural rather than habitual —
+> `tests/test_composition_commands.py` fails if one appears.
+>
+> The **outbound** half is only half here: the service writes events as outbox
+> rows and the drain publishes them to Redis, but nothing yet delivers them to
+> the monolith for push notification. That is ticket 15. The identity event
+> stream and the bulk load named below are ticket 06.
 
 No request path in chat queries the monolith. What needs fresh data arrives by
 routes that never block the service: **commands** the monolith sends, **events**

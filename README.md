@@ -29,7 +29,7 @@ Diagramas de arquitetura (fluxo de dados e infraestrutura AWS): [`docs/architect
 Decisões com trade-offs reais viraram ADR em [`docs/adr/`](docs/adr/); deferimentos mais leves e escolhas de tooling estão em [`docs/decisions.md`](docs/decisions.md). Resumo das principais:
 
 - [ADR-0001](docs/adr/0001-containerized-websocket-over-api-gateway.md) — WebSocket é servido pelo próprio container do backend, não via AWS API Gateway (evita ter que rastrear connection IDs externamente no orçamento de tempo do desafio).
-- [ADR-0002](docs/adr/0002-explicit-idempotent-chat-creation.md) — criação de chat é explícita (`POST /chats`) e idempotente para 1:1, em vez de implícita no envio da primeira mensagem.
+- [ADR-0002](docs/adr/0002-explicit-idempotent-chat-creation.md) — criação de chat é explícita (hoje `POST /internal/chats`, um comando do monolito) e idempotente para 1:1, em vez de implícita no envio da primeira mensagem.
 - [ADR-0003](docs/adr/0003-redis-pubsub-for-horizontal-scaling.md) — Redis pub/sub para fan-out entre instâncias do backend, já que "escalabilidade" é critério de avaliação explícito do desafio.
 - [ADR-0004](docs/adr/0004-jwt-in-localstorage.md) — JWT em `localStorage` em vez de cookie `httpOnly`, trade-off consciente dado o escopo de "auth simplificada".
 - [ADR-0005](docs/adr/0005-client-side-hmac-webhook-test-page.md) — a página de teste do webhook assina o HMAC no browser; segredo aceitável de expor só porque é uma ferramenta de teste manual atrás de login.
