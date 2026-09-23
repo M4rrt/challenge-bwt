@@ -19,9 +19,13 @@ import pytest
 from httpx import AsyncClient
 from httpx_ws import WebSocketDisconnect, aconnect_ws
 from httpx_ws.transport import ASGIWebSocketTransport
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.main import app
+from app.models.chat import Participant
+from tests.chats import open_chat
 from tests.chat_tokens import OMITTED, bearer, caller_token
 
 
@@ -39,14 +43,10 @@ async def test_chat_list_does_not_cross_company(client: AsyncClient):
     _, token_b_in_x = caller_token(user_id=user_b_id, company_id=company_x)
     _, token_b_in_y = caller_token(user_id=user_b_id, company_id=company_y)
 
-    await client.post(
-        "/conversations",
-        json={"participant_user_ids": [str(user_b_id)]},
-        headers=bearer(token_a),
-    )
+    await open_chat(client, bearer(token_a), str(user_b_id))
 
-    inside = await client.get("/conversations", headers=bearer(token_b_in_x))
-    outside = await client.get("/conversations", headers=bearer(token_b_in_y))
+    inside = await client.get("/chats", headers=bearer(token_b_in_x))
+    outside = await client.get("/chats", headers=bearer(token_b_in_y))
 
     assert len(inside.json()) == 1
     assert outside.json() == []
@@ -60,22 +60,18 @@ async def test_message_list_does_not_cross_company(client: AsyncClient):
     _, token_b_in_x = caller_token(user_id=user_b_id, company_id=company_x)
     _, token_b_in_y = caller_token(user_id=user_b_id, company_id=company_y)
 
-    created = await client.post(
-        "/conversations",
-        json={"participant_user_ids": [str(user_b_id)]},
-        headers=bearer(token_a),
-    )
+    created = await open_chat(client, bearer(token_a), str(user_b_id))
     chat_id = created.json()["id"]
     await client.post(
-        f"/conversations/{chat_id}/messages",
+        f"/chats/{chat_id}/messages",
         json={"body": "interno"},
         headers=bearer(token_a),
     )
 
-    inside = await client.get(f"/conversations/{chat_id}/messages", headers=bearer(token_b_in_x))
-    outside = await client.get(f"/conversations/{chat_id}/messages", headers=bearer(token_b_in_y))
+    inside = await client.get(f"/chats/{chat_id}/messages", headers=bearer(token_b_in_x))
+    outside = await client.get(f"/chats/{chat_id}/messages", headers=bearer(token_b_in_y))
     never_existed = await client.get(
-        f"/conversations/{uuid.uuid4()}/messages", headers=bearer(token_b_in_y)
+        f"/chats/{uuid.uuid4()}/messages", headers=bearer(token_b_in_y)
     )
 
     assert len(inside.json()) == 1
@@ -94,16 +90,8 @@ async def test_opening_a_one_to_one_does_not_reuse_another_companys_chat(client:
     _, token_a_in_x = caller_token(user_id=user_a_id, company_id=company_x)
     _, token_a_in_y = caller_token(user_id=user_a_id, company_id=company_y)
 
-    in_x = await client.post(
-        "/conversations",
-        json={"participant_user_ids": [str(user_b_id)]},
-        headers=bearer(token_a_in_x),
-    )
-    in_y = await client.post(
-        "/conversations",
-        json={"participant_user_ids": [str(user_b_id)]},
-        headers=bearer(token_a_in_y),
-    )
+    in_x = await open_chat(client, bearer(token_a_in_x), str(user_b_id))
+    in_y = await open_chat(client, bearer(token_a_in_y), str(user_b_id))
 
     assert in_x.json()["id"] != in_y.json()["id"]
 
@@ -112,21 +100,17 @@ async def test_webhook_does_not_cross_company(client: AsyncClient):
     company_x = uuid.uuid4()
     company_y = uuid.uuid4()
     _, token_a = caller_token(company_id=company_x)
-    created = await client.post(
-        "/conversations",
-        json={"participant_user_ids": [str(uuid.uuid4())]},
-        headers=bearer(token_a),
-    )
+    created = await open_chat(client, bearer(token_a), str(uuid.uuid4()))
     chat_id = created.json()["id"]
 
     wrong_body, wrong_headers = _signed(
-        {"company_id": str(company_y), "conversation_id": chat_id, "body": "de fora"}
+        {"company_id": str(company_y), "chat_id": chat_id, "body": "de fora"}
     )
     unknown_body, unknown_headers = _signed(
-        {"company_id": str(company_y), "conversation_id": str(uuid.uuid4()), "body": "de fora"}
+        {"company_id": str(company_y), "chat_id": str(uuid.uuid4()), "body": "de fora"}
     )
     right_body, right_headers = _signed(
-        {"company_id": str(company_x), "conversation_id": chat_id, "body": "de dentro"}
+        {"company_id": str(company_x), "chat_id": chat_id, "body": "de dentro"}
     )
 
     refused = await client.post("/webhook/messages", content=wrong_body, headers=wrong_headers)
@@ -248,11 +232,11 @@ async def test_a_caller_with_no_company_reaches_nothing(client: AsyncClient):
 
     responses = [
         await client.get("/auth/me", headers=headers),
-        await client.get("/conversations", headers=headers),
-        await client.post("/conversations", json={"participant_user_ids": []}, headers=headers),
-        await client.get(f"/conversations/{chat_id}/messages", headers=headers),
+        await client.get("/chats", headers=headers),
+        await open_chat(client, headers),
+        await client.get(f"/chats/{chat_id}/messages", headers=headers),
         await client.post(
-            f"/conversations/{chat_id}/messages", json={"body": "oi"}, headers=headers
+            f"/chats/{chat_id}/messages", json={"body": "oi"}, headers=headers
         ),
     ]
 
@@ -266,20 +250,16 @@ async def test_sending_into_another_companys_chat_is_refused(client: AsyncClient
     user_b_id = uuid.uuid4()
     _, token_b_in_y = caller_token(user_id=user_b_id, company_id=company_y)
 
-    created = await client.post(
-        "/conversations",
-        json={"participant_user_ids": [str(user_b_id)]},
-        headers=bearer(token_a),
-    )
+    created = await open_chat(client, bearer(token_a), str(user_b_id))
     chat_id = created.json()["id"]
 
     refused = await client.post(
-        f"/conversations/{chat_id}/messages",
+        f"/chats/{chat_id}/messages",
         json={"body": "de fora"},
         headers=bearer(token_b_in_y),
     )
     never_existed = await client.post(
-        f"/conversations/{uuid.uuid4()}/messages",
+        f"/chats/{uuid.uuid4()}/messages",
         json={"body": "de fora"},
         headers=bearer(token_b_in_y),
     )
@@ -298,11 +278,7 @@ async def test_websocket_does_not_open_on_another_companys_chat(client: AsyncCli
     user_b_id = uuid.uuid4()
     _, token_b_in_y = caller_token(user_id=user_b_id, company_id=company_y)
 
-    created = await client.post(
-        "/conversations",
-        json={"participant_user_ids": [str(user_b_id)]},
-        headers=bearer(token_a),
-    )
+    created = await open_chat(client, bearer(token_a), str(user_b_id))
     chat_id = created.json()["id"]
 
     async with AsyncClient(
@@ -310,12 +286,12 @@ async def test_websocket_does_not_open_on_another_companys_chat(client: AsyncCli
     ) as ws_client:
         with pytest.raises(WebSocketDisconnect) as refusal:
             async with aconnect_ws(
-                f"/websocket/conversations/{chat_id}?token={token_b_in_y}", client=ws_client
+                f"/websocket/chats/{chat_id}?token={token_b_in_y}", client=ws_client
             ):
                 pass
         with pytest.raises(WebSocketDisconnect) as never_existed:
             async with aconnect_ws(
-                f"/websocket/conversations/{uuid.uuid4()}?token={token_b_in_y}", client=ws_client
+                f"/websocket/chats/{uuid.uuid4()}?token={token_b_in_y}", client=ws_client
             ):
                 pass
 
@@ -343,20 +319,48 @@ async def test_user_socket_does_not_receive_another_companys_chat(client: AsyncC
         async with aconnect_ws(
             f"/websocket/users/me?token={token_b_in_y}", client=ws_client
         ) as socket_in_y:
-            in_x = await client.post(
-                "/conversations",
-                json={"participant_user_ids": [str(user_b_id)]},
-                headers=bearer(token_a_in_x),
-            )
+            in_x = await open_chat(client, bearer(token_a_in_x), str(user_b_id))
             # B's own Company's traffic follows, so a missing first frame is a
             # boundary holding rather than a dead socket.
-            in_y = await client.post(
-                "/conversations",
-                json={"participant_user_ids": [str(user_b_id)]},
-                headers=bearer(token_c_in_y),
-            )
+            in_y = await open_chat(client, bearer(token_c_in_y), str(user_b_id))
 
             received = await socket_in_y.receive_json(timeout=5)
 
     assert received["id"] != in_x.json()["id"]
     assert received["id"] == in_y.json()["id"]
+
+
+def test_chat_and_participant_are_both_company_scoped():
+    """The guard above finds scoped models rather than listing them, which cuts both ways.
+
+    A hand-written list goes stale, but a found one goes quiet: drop
+    `CompanyScoped` from Participant and `_scoped_model_names` keeps returning
+    a non-empty set, the AST guard keeps passing, and every Participant query
+    stops being checked. These two are named here because the Company boundary
+    is defined in terms of them.
+    """
+    assert {"Chat", "Participant"} <= _scoped_model_names()
+
+
+async def test_creating_a_chat_files_every_participant_under_the_callers_company(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """A Participant's Company comes from the caller's token, not from the command.
+
+    The command names user identifiers, and an identifier says nothing about
+    which Company the row belongs in. If a Participant could be filed under
+    another Company, the Chat and its members would answer to two different
+    boundaries and `list_chats` would join across them.
+    """
+    company_x = uuid.uuid4()
+    _, token_a = caller_token(company_id=company_x)
+    user_b_id, _ = caller_token(company_id=uuid.uuid4())
+
+    chat_id = (await open_chat(client, bearer(token_a), user_b_id)).json()["id"]
+
+    participants = await db_session.scalars(
+        select(Participant).where(Participant.chat_id == uuid.UUID(chat_id))
+    )
+    companies = {participant.company_id for participant in participants}
+
+    assert companies == {company_x}

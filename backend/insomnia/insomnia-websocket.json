@@ -8,7 +8,7 @@
       "_id": "wrk_chatapp_ws",
       "_type": "workspace",
       "name": "Chat App — Ticket 06 (WebSocket + Redis)",
-      "description": "Auth (03) + Conversations (04) + Messages (05) + real-time WebSocket delivery (06) manual test flow.",
+      "description": "Auth (03) + Chats (04) + Messages (05) + real-time WebSocket delivery (06) manual test flow.",
       "scope": "collection"
     },
     {
@@ -25,7 +25,7 @@
         "user_a_id": "",
         "user_b_id": "",
         "user_c_id": "",
-        "conversation_id": ""
+        "chat_id": ""
       },
       "isPrivate": false,
       "metaSortKey": 0
@@ -35,7 +35,7 @@
       "_type": "request_group",
       "parentId": "wrk_chatapp_ws",
       "name": "01 - Auth (register + login 3 users)",
-      "description": "Run in order. After each register, copy the response `id` into the matching user_x_id env var. After each login, copy `access_token` into the matching token_x env var. User C never joins the conversation — used to prove the WebSocket also rejects non-participants.",
+      "description": "Run in order. After each register, copy the response `id` into the matching user_x_id env var. After each login, copy `access_token` into the matching token_x env var. User C never joins the chat — used to prove the WebSocket also rejects non-participants.",
       "metaSortKey": 0
     },
     {
@@ -80,7 +80,7 @@
         "text": "{\n  \"email\": \"carla@example.com\",\n  \"username\": \"carla\",\n  \"password\": \"Senha-Forte-123\"\n}"
       },
       "headers": [{ "name": "Content-Type", "value": "application/json" }],
-      "description": "Copy response `id` -> env `user_c_id`. This user is never added to the conversation below.",
+      "description": "Copy response `id` -> env `user_c_id`. This user is never added to the chat below.",
       "metaSortKey": 2
     },
     {
@@ -132,26 +132,26 @@
       "_id": "fld_ws_setup",
       "_type": "request_group",
       "parentId": "wrk_chatapp_ws",
-      "name": "02 - Setup (create the conversation)",
+      "name": "02 - Setup (create the chat)",
       "description": "Run after the Auth folder so token_x/user_x_id env vars are filled in.",
       "metaSortKey": 1
     },
     {
-      "_id": "req_ws_create_conversation",
+      "_id": "req_ws_create_chat",
       "_type": "request",
       "parentId": "fld_ws_setup",
-      "name": "Create 1:1 conversation (A -> B)",
+      "name": "Create 1:1 chat (A -> B)",
       "method": "POST",
-      "url": "{{ _.base_url }}/conversations",
+      "url": "{{ _.base_url }}/chats",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"participant_user_ids\": [\"{{ _.user_b_id }}\"]\n}"
+        "text": "{\n  \"type\": \"staff\",\n  \"participants\": [{ \"user_id\": \"{{ _.user_b_id }}\", \"user_kind\": \"staff\" }]\n}"
       },
       "headers": [
         { "name": "Content-Type", "value": "application/json" },
         { "name": "Authorization", "value": "Bearer {{ _.token_a }}" }
       ],
-      "description": "Expect 201. Copy response `id` -> env `conversation_id`. User C is deliberately not a participant.",
+      "description": "Expect 201. Copy response `id` -> env `chat_id`. User C is deliberately not a participant.",
       "metaSortKey": 0
     },
     {
@@ -167,7 +167,7 @@
       "_type": "websocket_request",
       "parentId": "fld_ws_realtime",
       "name": "Connect as B (participant) — expect open + live delivery",
-      "url": "{{ _.ws_base_url }}/websocket/conversations/{{ _.conversation_id }}?token={{ _.token_b }}",
+      "url": "{{ _.ws_base_url }}/websocket/chats/{{ _.chat_id }}?token={{ _.token_b }}",
       "headers": [],
       "authentication": {},
       "description": "Click Connect and leave this tab open. Then run 'Send message as A' (folder 04) — the message should appear here within ~1s.",
@@ -178,7 +178,7 @@
       "_type": "websocket_request",
       "parentId": "fld_ws_realtime",
       "name": "Connect as C (non-participant) — expect immediate close, code 1008",
-      "url": "{{ _.ws_base_url }}/websocket/conversations/{{ _.conversation_id }}?token={{ _.token_c }}",
+      "url": "{{ _.ws_base_url }}/websocket/chats/{{ _.chat_id }}?token={{ _.token_c }}",
       "headers": [],
       "authentication": {},
       "description": "Click Connect. The connection should close immediately (before any 'open' event settles) with close code 1008 — C is not a participant, and the server never accepts the handshake.",
@@ -198,7 +198,7 @@
       "parentId": "fld_ws_trigger",
       "name": "Send message as A (participant)",
       "method": "POST",
-      "url": "{{ _.base_url }}/conversations/{{ _.conversation_id }}/messages",
+      "url": "{{ _.base_url }}/chats/{{ _.chat_id }}/messages",
       "body": {
         "mimeType": "application/json",
         "text": "{\n  \"body\": \"oi via websocket\"\n}"

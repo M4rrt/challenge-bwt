@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from '../../../lib/auth/AuthContext'
-import { createConversation, getMe, listConversations, listUsers } from '../../../lib/api'
+import { createChat, getMe, listChats, listUsers } from '../../../lib/api'
 import Sidebar from './Sidebar'
 
 vi.mock('../../../lib/api', async () => {
@@ -13,8 +13,8 @@ vi.mock('../../../lib/api', async () => {
     ...actual,
     getMe: vi.fn(),
     listUsers: vi.fn(),
-    listConversations: vi.fn(),
-    createConversation: vi.fn(),
+    listChats: vi.fn(),
+    createChat: vi.fn(),
   }
 })
 
@@ -37,16 +37,16 @@ const USERS = [
   { id: 'carla-id', username: 'carla' },
 ]
 
-function renderConversas() {
+function renderChats() {
   const queryClient = new QueryClient()
   localStorage.setItem('chat-app:token', 'token-123')
   return render(
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <MemoryRouter initialEntries={['/conversas']}>
+        <MemoryRouter initialEntries={['/chats']}>
           <Routes>
-            <Route path="/conversas" element={<Sidebar />} />
-            <Route path="/conversas/:conversationId" element={<Sidebar />} />
+            <Route path="/chats" element={<Sidebar />} />
+            <Route path="/chats/:chatId" element={<Sidebar />} />
             <Route path="/" element={<div>Login page</div>} />
           </Routes>
         </MemoryRouter>
@@ -62,92 +62,92 @@ beforeEach(() => {
 
   vi.mocked(getMe).mockReset()
   vi.mocked(listUsers).mockReset()
-  vi.mocked(listConversations).mockReset()
-  vi.mocked(createConversation).mockReset()
+  vi.mocked(listChats).mockReset()
+  vi.mocked(createChat).mockReset()
 
   vi.mocked(getMe).mockResolvedValue(ME)
   vi.mocked(listUsers).mockResolvedValue(USERS)
 })
 
 describe('Sidebar', () => {
-  it('shows the conversation count in the list header', async () => {
-    vi.mocked(listConversations).mockResolvedValue([
-      { id: 'conv-1', name: null, participant_user_ids: ['me-id', 'beto-id'], last_message_at: null },
+  it('shows the chat count in the list header', async () => {
+    vi.mocked(listChats).mockResolvedValue([
+      { id: 'chat-1', name: null, participant_user_ids: ['me-id', 'beto-id'], last_message_at: null },
       {
-        id: 'conv-2',
+        id: 'chat-2',
         name: 'Trio',
         participant_user_ids: ['me-id', 'beto-id', 'carla-id'],
         last_message_at: null,
       },
     ])
-    renderConversas()
+    renderChats()
 
-    expect(await screen.findByRole('heading', { name: 'Conversas (2)' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Chats (2)' })).toBeInTheDocument()
   })
 
-  it("renders the user's conversations, resolving 1:1s to the other participant's username", async () => {
-    vi.mocked(listConversations).mockResolvedValue([
-      { id: 'conv-1', name: null, participant_user_ids: ['me-id', 'beto-id'], last_message_at: null },
+  it("renders the user's chats, resolving 1:1s to the other participant's username", async () => {
+    vi.mocked(listChats).mockResolvedValue([
+      { id: 'chat-1', name: null, participant_user_ids: ['me-id', 'beto-id'], last_message_at: null },
       {
-        id: 'conv-2',
+        id: 'chat-2',
         name: 'Trio',
         participant_user_ids: ['me-id', 'beto-id', 'carla-id'],
         last_message_at: null,
       },
     ])
-    renderConversas()
+    renderChats()
 
     expect(await screen.findByText('beto')).toBeInTheDocument()
     expect(await screen.findByText('Trio')).toBeInTheDocument()
   })
 
   it('shows a person icon for a 1:1 item and a group icon for a group item', async () => {
-    vi.mocked(listConversations).mockResolvedValue([
-      { id: 'conv-1', name: null, participant_user_ids: ['me-id', 'beto-id'], last_message_at: null },
+    vi.mocked(listChats).mockResolvedValue([
+      { id: 'chat-1', name: null, participant_user_ids: ['me-id', 'beto-id'], last_message_at: null },
       {
-        id: 'conv-2',
+        id: 'chat-2',
         name: 'Trio',
         participant_user_ids: ['me-id', 'beto-id', 'carla-id'],
         last_message_at: null,
       },
     ])
-    renderConversas()
+    renderChats()
 
     await screen.findByText('beto')
-    expect(screen.getByLabelText('Conversa individual')).toBeInTheDocument()
-    expect(screen.getByLabelText('Conversa em grupo')).toBeInTheDocument()
+    expect(screen.getByLabelText('Chat individual')).toBeInTheDocument()
+    expect(screen.getByLabelText('Chat em grupo')).toBeInTheDocument()
   })
 
-  it('renders the "Nova conversa" button before the conversation list', async () => {
-    vi.mocked(listConversations).mockResolvedValue([
-      { id: 'conv-1', name: null, participant_user_ids: ['me-id', 'beto-id'], last_message_at: null },
+  it('renders the "Nova chat" button before the chat list', async () => {
+    vi.mocked(listChats).mockResolvedValue([
+      { id: 'chat-1', name: null, participant_user_ids: ['me-id', 'beto-id'], last_message_at: null },
     ])
-    renderConversas()
+    renderChats()
 
-    const button = await screen.findByRole('button', { name: 'Nova conversa' })
+    const button = await screen.findByRole('button', { name: 'Nova chat' })
     const item = await screen.findByText('beto')
 
     expect(button.compareDocumentPosition(item) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it('refetches the user list when opening the new-conversation form', async () => {
-    vi.mocked(listConversations).mockResolvedValue([])
+  it('refetches the user list when opening the new-chat form', async () => {
+    vi.mocked(listChats).mockResolvedValue([])
     const user = userEvent.setup()
-    renderConversas()
+    renderChats()
 
     await waitFor(() => expect(listUsers).toHaveBeenCalledTimes(1))
 
-    await user.click(await screen.findByRole('button', { name: 'Nova conversa' }))
+    await user.click(await screen.findByRole('button', { name: 'Nova chat' }))
 
     await waitFor(() => expect(listUsers).toHaveBeenCalledTimes(2))
   })
 
-  it('requires a name before creating a group conversation', async () => {
-    vi.mocked(listConversations).mockResolvedValue([])
+  it('requires a name before creating a group chat', async () => {
+    vi.mocked(listChats).mockResolvedValue([])
     const user = userEvent.setup()
-    renderConversas()
+    renderChats()
 
-    await user.click(await screen.findByRole('button', { name: 'Nova conversa' }))
+    await user.click(await screen.findByRole('button', { name: 'Nova chat' }))
     await user.click(screen.getByRole('checkbox', { name: 'beto' }))
     await user.click(screen.getByRole('checkbox', { name: 'carla' }))
 
@@ -155,13 +155,13 @@ describe('Sidebar', () => {
 
     await user.click(screen.getByRole('button', { name: 'Criar' }))
 
-    expect(createConversation).not.toHaveBeenCalled()
+    expect(createChat).not.toHaveBeenCalled()
 
     await user.type(screen.getByPlaceholderText(/Nome do Grupo/i), 'Trio')
     await user.click(screen.getByRole('button', { name: 'Criar' }))
 
     await waitFor(() =>
-      expect(createConversation).toHaveBeenCalledWith(
+      expect(createChat).toHaveBeenCalledWith(
         ['beto-id', 'carla-id'],
         'Trio',
         'token-123',
@@ -169,95 +169,95 @@ describe('Sidebar', () => {
     )
   })
 
-  it('does not duplicate an existing 1:1 conversation when the same contact is picked again', async () => {
-    // listConversations always resolves to this same single-item array, so this would
+  it('does not duplicate an existing 1:1 chat when the same contact is picked again', async () => {
+    // listChats always resolves to this same single-item array, so this would
     // fail if the create mutation appended its response into the list locally instead
     // of relying on the (idempotent) backend + a refetch.
-    const existingConversation = {
-      id: 'conv-1',
+    const existingChat = {
+      id: 'chat-1',
       name: null,
       participant_user_ids: ['me-id', 'beto-id'],
       last_message_at: null,
     }
-    vi.mocked(listConversations).mockResolvedValue([existingConversation])
-    vi.mocked(createConversation).mockResolvedValue(existingConversation)
+    vi.mocked(listChats).mockResolvedValue([existingChat])
+    vi.mocked(createChat).mockResolvedValue(existingChat)
     const user = userEvent.setup()
-    renderConversas()
+    renderChats()
 
     expect(await screen.findByText('beto')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Nova conversa' }))
+    await user.click(screen.getByRole('button', { name: 'Nova chat' }))
     await user.click(screen.getByRole('checkbox', { name: 'beto' }))
     await user.click(screen.getByRole('button', { name: 'Criar' }))
 
-    await waitFor(() => expect(createConversation).toHaveBeenCalledWith(['beto-id'], undefined, 'token-123'))
+    await waitFor(() => expect(createChat).toHaveBeenCalledWith(['beto-id'], undefined, 'token-123'))
     expect(await screen.findAllByText('beto')).toHaveLength(1)
   })
 
-  it('refetches the conversation list when the user-channel socket receives a message', async () => {
-    vi.mocked(listConversations).mockResolvedValue([])
-    renderConversas()
+  it('refetches the chat list when the user-channel socket receives a message', async () => {
+    vi.mocked(listChats).mockResolvedValue([])
+    renderChats()
 
     await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1))
     expect(FakeWebSocket.instances[0].url).toContain('/websocket/users/me?token=token-123')
-    expect(listConversations).toHaveBeenCalledTimes(1)
+    expect(listChats).toHaveBeenCalledTimes(1)
 
     FakeWebSocket.instances[0].onmessage?.({ data: '{}' })
 
-    await waitFor(() => expect(listConversations).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(listChats).toHaveBeenCalledTimes(2))
   })
 
-  it('shows a new-activity indicator for a conversation with a message newer than the last-seen cursor', async () => {
-    localStorage.setItem('chat-app:lastSeen:me-id:conv-1', '2026-08-06T12:00:00Z')
-    vi.mocked(listConversations).mockResolvedValue([
+  it('shows a new-activity indicator for a chat with a message newer than the last-seen cursor', async () => {
+    localStorage.setItem('chat-app:lastSeen:me-id:chat-1', '2026-08-06T12:00:00Z')
+    vi.mocked(listChats).mockResolvedValue([
       {
-        id: 'conv-1',
+        id: 'chat-1',
         name: null,
         participant_user_ids: ['me-id', 'beto-id'],
         last_message_at: '2026-08-06T12:05:00Z',
       },
     ])
-    renderConversas()
+    renderChats()
 
     expect(await screen.findByLabelText('Nova atividade')).toBeInTheDocument()
   })
 
   it('does not show a new-activity indicator when the last-seen cursor is already current', async () => {
-    localStorage.setItem('chat-app:lastSeen:me-id:conv-1', '2026-08-06T12:05:00Z')
-    vi.mocked(listConversations).mockResolvedValue([
+    localStorage.setItem('chat-app:lastSeen:me-id:chat-1', '2026-08-06T12:05:00Z')
+    vi.mocked(listChats).mockResolvedValue([
       {
-        id: 'conv-1',
+        id: 'chat-1',
         name: null,
         participant_user_ids: ['me-id', 'beto-id'],
         last_message_at: '2026-08-06T12:05:00Z',
       },
     ])
-    renderConversas()
+    renderChats()
 
     await screen.findByText('beto')
     expect(screen.queryByLabelText('Nova atividade')).not.toBeInTheDocument()
   })
 
   it('does not show a new-activity indicator when there is no stored cursor (cold start)', async () => {
-    vi.mocked(listConversations).mockResolvedValue([
+    vi.mocked(listChats).mockResolvedValue([
       {
-        id: 'conv-1',
+        id: 'chat-1',
         name: null,
         participant_user_ids: ['me-id', 'beto-id'],
         last_message_at: '2026-08-06T12:05:00Z',
       },
     ])
-    renderConversas()
+    renderChats()
 
     await screen.findByText('beto')
     expect(screen.queryByLabelText('Nova atividade')).not.toBeInTheDocument()
   })
 
-  it('does not show a new-activity indicator for the conversation currently open', async () => {
-    localStorage.setItem('chat-app:lastSeen:me-id:conv-1', '2026-08-06T12:00:00Z')
-    vi.mocked(listConversations).mockResolvedValue([
+  it('does not show a new-activity indicator for the chat currently open', async () => {
+    localStorage.setItem('chat-app:lastSeen:me-id:chat-1', '2026-08-06T12:00:00Z')
+    vi.mocked(listChats).mockResolvedValue([
       {
-        id: 'conv-1',
+        id: 'chat-1',
         name: null,
         participant_user_ids: ['me-id', 'beto-id'],
         last_message_at: '2026-08-06T12:05:00Z',
@@ -268,9 +268,9 @@ describe('Sidebar', () => {
     render(
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <MemoryRouter initialEntries={['/conversas/conv-1']}>
+          <MemoryRouter initialEntries={['/chats/chat-1']}>
             <Routes>
-              <Route path="/conversas/:conversationId" element={<Sidebar />} />
+              <Route path="/chats/:chatId" element={<Sidebar />} />
             </Routes>
           </MemoryRouter>
         </AuthProvider>
@@ -281,35 +281,35 @@ describe('Sidebar', () => {
     expect(screen.queryByLabelText('Nova atividade')).not.toBeInTheDocument()
   })
 
-  it('navigates to the new conversation after creating it', async () => {
-    vi.mocked(listConversations).mockResolvedValue([])
-    const newConversation = {
-      id: 'conv-new',
+  it('navigates to the new chat after creating it', async () => {
+    vi.mocked(listChats).mockResolvedValue([])
+    const newChat = {
+      id: 'chat-new',
       name: null,
       participant_user_ids: ['me-id', 'beto-id'],
       last_message_at: null,
     }
-    vi.mocked(createConversation).mockResolvedValue(newConversation)
+    vi.mocked(createChat).mockResolvedValue(newChat)
     const user = userEvent.setup()
     const queryClient = new QueryClient()
     localStorage.setItem('chat-app:token', 'token-123')
     render(
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <MemoryRouter initialEntries={['/conversas']}>
+          <MemoryRouter initialEntries={['/chats']}>
             <Routes>
-              <Route path="/conversas" element={<Sidebar />} />
-              <Route path="/conversas/:conversationId" element={<div>Conversation view</div>} />
+              <Route path="/chats" element={<Sidebar />} />
+              <Route path="/chats/:chatId" element={<div>Chat view</div>} />
             </Routes>
           </MemoryRouter>
         </AuthProvider>
       </QueryClientProvider>,
     )
 
-    await user.click(await screen.findByRole('button', { name: 'Nova conversa' }))
+    await user.click(await screen.findByRole('button', { name: 'Nova chat' }))
     await user.click(screen.getByRole('checkbox', { name: 'beto' }))
     await user.click(screen.getByRole('button', { name: 'Criar' }))
 
-    expect(await screen.findByText('Conversation view')).toBeInTheDocument()
+    expect(await screen.findByText('Chat view')).toBeInTheDocument()
   })
 })

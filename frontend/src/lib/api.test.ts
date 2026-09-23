@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   ApiError,
   apiFetch,
-  createConversation,
+  createChat,
   getMe,
-  listConversations,
+  listChats,
   listMessages,
   listUsers,
   login,
@@ -123,40 +123,40 @@ describe('listUsers', () => {
   })
 })
 
-describe('listConversations', () => {
-  it('fetches the caller conversations with the given token', async () => {
+describe('listChats', () => {
+  it('fetches the caller chats with the given token', async () => {
     vi.mocked(fetch).mockResolvedValue(
       new Response(
-        JSON.stringify([{ id: 'conv-1', name: null, participant_user_ids: ['user-1', 'user-2'] }]),
+        JSON.stringify([{ id: 'chat-1', name: null, participant_user_ids: ['user-1', 'user-2'] }]),
         { status: 200 },
       ),
     )
 
-    const result = await listConversations('token-123')
+    const result = await listChats('token-123')
 
     expect(fetch).toHaveBeenCalledWith(
-      'http://localhost:8000/conversations',
+      'http://localhost:8000/chats',
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer token-123' }),
       }),
     )
-    expect(result).toEqual([{ id: 'conv-1', name: null, participant_user_ids: ['user-1', 'user-2'] }])
+    expect(result).toEqual([{ id: 'chat-1', name: null, participant_user_ids: ['user-1', 'user-2'] }])
   })
 })
 
-describe('createConversation', () => {
+describe('createChat', () => {
   it('posts participant ids and an optional name with the given token', async () => {
     vi.mocked(fetch).mockResolvedValue(
       new Response(
-        JSON.stringify({ id: 'conv-1', name: 'Trio', participant_user_ids: ['user-1', 'user-2', 'user-3'] }),
+        JSON.stringify({ id: 'chat-1', name: 'Trio', participant_user_ids: ['user-1', 'user-2', 'user-3'] }),
         { status: 201 },
       ),
     )
 
-    const result = await createConversation(['user-2', 'user-3'], 'Trio', 'token-123')
+    const result = await createChat(['user-2', 'user-3'], 'Trio', 'token-123')
 
     expect(fetch).toHaveBeenCalledWith(
-      'http://localhost:8000/conversations',
+      'http://localhost:8000/chats',
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ participant_user_ids: ['user-2', 'user-3'], name: 'Trio' }),
@@ -164,7 +164,7 @@ describe('createConversation', () => {
       }),
     )
     expect(result).toEqual({
-      id: 'conv-1',
+      id: 'chat-1',
       name: 'Trio',
       participant_user_ids: ['user-1', 'user-2', 'user-3'],
     })
@@ -172,13 +172,13 @@ describe('createConversation', () => {
 })
 
 describe('listMessages', () => {
-  it('fetches a conversation message backlog with the given token', async () => {
+  it('fetches a chat message backlog with the given token', async () => {
     vi.mocked(fetch).mockResolvedValue(
       new Response(
         JSON.stringify([
           {
             id: 'msg-1',
-            conversation_id: 'conv-1',
+            chat_id: 'chat-1',
             sender_id: 'user-1',
             sender_type: 'user',
             source_label: null,
@@ -190,10 +190,10 @@ describe('listMessages', () => {
       ),
     )
 
-    const result = await listMessages('conv-1', 'token-123')
+    const result = await listMessages('chat-1', 'token-123')
 
     expect(fetch).toHaveBeenCalledWith(
-      'http://localhost:8000/conversations/conv-1/messages',
+      'http://localhost:8000/chats/chat-1/messages',
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer token-123' }),
       }),
@@ -201,7 +201,7 @@ describe('listMessages', () => {
     expect(result).toEqual([
       {
         id: 'msg-1',
-        conversation_id: 'conv-1',
+        chat_id: 'chat-1',
         sender_id: 'user-1',
         sender_type: 'user',
         source_label: null,
@@ -213,12 +213,12 @@ describe('listMessages', () => {
 })
 
 describe('sendMessage', () => {
-  it('posts a message body to a conversation with the given token', async () => {
+  it('posts a message body to a chat with the given token', async () => {
     vi.mocked(fetch).mockResolvedValue(
       new Response(
         JSON.stringify({
           id: 'msg-1',
-          conversation_id: 'conv-1',
+          chat_id: 'chat-1',
           sender_id: 'user-1',
           sender_type: 'user',
           source_label: null,
@@ -229,10 +229,10 @@ describe('sendMessage', () => {
       ),
     )
 
-    const result = await sendMessage('conv-1', 'oi', 'token-123')
+    const result = await sendMessage('chat-1', 'oi', 'token-123')
 
     expect(fetch).toHaveBeenCalledWith(
-      'http://localhost:8000/conversations/conv-1/messages',
+      'http://localhost:8000/chats/chat-1/messages',
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ body: 'oi' }),
@@ -241,7 +241,7 @@ describe('sendMessage', () => {
     )
     expect(result).toEqual({
       id: 'msg-1',
-      conversation_id: 'conv-1',
+      chat_id: 'chat-1',
       sender_id: 'user-1',
       sender_type: 'user',
       source_label: null,
@@ -257,7 +257,7 @@ describe('sendWebhookMessage', () => {
       new Response(
         JSON.stringify({
           id: 'msg-1',
-          conversation_id: 'conv-1',
+          chat_id: 'chat-1',
           sender_id: null,
           sender_type: 'external',
           source_label: 'crm',
@@ -267,7 +267,7 @@ describe('sendWebhookMessage', () => {
         { status: 201 },
       ),
     )
-    const rawBody = JSON.stringify({ conversation_id: 'conv-1', body: 'oi', source_label: 'crm' })
+    const rawBody = JSON.stringify({ chat_id: 'chat-1', body: 'oi', source_label: 'crm' })
 
     const result = await sendWebhookMessage(rawBody, 'deadbeef')
 
@@ -283,7 +283,7 @@ describe('sendWebhookMessage', () => {
     expect((options?.headers as Record<string, string> | undefined)?.Authorization).toBeUndefined()
     expect(result).toEqual({
       id: 'msg-1',
-      conversation_id: 'conv-1',
+      chat_id: 'chat-1',
       sender_id: null,
       sender_type: 'external',
       source_label: 'crm',

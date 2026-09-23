@@ -6,16 +6,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.chat_token import verify_chat_token
 from app.core.company_scope import CompanyScope
 from app.db import get_db
-from app.services.message import ConversationNotFoundError, assert_participant
+from app.services.message import ChatNotFoundError, assert_participant
 from app.services.realtime import connection_manager
 
 router = APIRouter(prefix="/websocket", tags=["websocket"])
 
 
-@router.websocket("/conversations/{conversation_id}")
-async def conversation_socket(
+@router.websocket("/chats/{chat_id}")
+async def chat_socket(
     websocket: WebSocket,
-    conversation_id: uuid.UUID,
+    chat_id: uuid.UUID,
     token: str,
     db: AsyncSession = Depends(get_db),
 ) -> None:
@@ -25,13 +25,13 @@ async def conversation_socket(
         return
 
     try:
-        await assert_participant(db, CompanyScope.of(caller), conversation_id, caller.id)
-    except ConversationNotFoundError:
+        await assert_participant(db, CompanyScope.of(caller), chat_id, caller.id)
+    except ChatNotFoundError:
         await websocket.close(code=1008)
         return
 
     await websocket.accept()
-    connection_manager.connect(conversation_id, websocket)
+    connection_manager.connect(chat_id, websocket)
     try:
         while True:
             raw = await websocket.receive_json()
@@ -42,7 +42,7 @@ async def conversation_socket(
     except WebSocketDisconnect:
         pass
     finally:
-        connection_manager.disconnect(conversation_id, websocket)
+        connection_manager.disconnect(chat_id, websocket)
 
 
 @router.websocket("/users/me")

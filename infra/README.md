@@ -138,7 +138,7 @@ de hospedagem do frontend/autoscaling/DNS/state, não a segurança de transporte
 `frontend.tf` provisiona um bucket S3 privado (sem acesso público) mais uma distribuição CloudFront lendo
 dele via Origin Access Control — o bucket em si é inacessível exceto pelo CloudFront. Dois blocos
 `custom_error_response` transformam 403/404 do S3 (qualquer caminho que não seja um objeto literal, ex.
-`/conversations/123`) em um 200 servindo `/index.html`, para as rotas client-side do React Router
+`/chats/123`) em um 200 servindo `/index.html`, para as rotas client-side do React Router
 funcionarem em carregamento direto e refresh.
 
 Build e deploy:

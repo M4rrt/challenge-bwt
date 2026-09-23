@@ -5,7 +5,7 @@ from app.core.security import verify_webhook_signature
 from app.db import get_db
 from app.models.message import Message
 from app.schemas.message import MessageRead, WebhookMessageCreate
-from app.services.message import ConversationNotFoundError, send_external_message
+from app.services.message import ChatNotFoundError, send_external_message
 
 router = APIRouter(prefix="/webhook", tags=["webhook"])
 
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/webhook", tags=["webhook"])
 def _to_read(message: Message) -> MessageRead:
     return MessageRead(
         id=message.id,
-        conversation_id=message.conversation_id,
+        chat_id=message.chat_id,
         sender_id=message.sender_id,
         sender_type=message.sender_type,
         source_label=message.source_label,
@@ -34,6 +34,6 @@ async def receive(
     data = WebhookMessageCreate.model_validate_json(body)
     try:
         message = await send_external_message(db, data)
-    except ConversationNotFoundError:
-        raise HTTPException(status_code=404, detail="conversation not found")
+    except ChatNotFoundError:
+        raise HTTPException(status_code=404, detail="chat not found")
     return _to_read(message)

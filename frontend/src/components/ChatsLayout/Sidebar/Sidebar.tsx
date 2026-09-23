@@ -19,9 +19,9 @@ import CloseIcon from '@mui/icons-material/Close'
 import GroupIcon from '@mui/icons-material/Group'
 import LogoutIcon from '@mui/icons-material/Logout'
 import PersonIcon from '@mui/icons-material/Person'
-import { createConversation, getMe, listConversations, listUsers } from '../../../lib/api'
+import { createChat, getMe, listChats, listUsers } from '../../../lib/api'
 import { useAuth } from '../../../lib/auth/AuthContext'
-import { conversationLabel } from '../conversationLabel'
+import { chatLabel } from '../chatLabel'
 import { hasNewActivity, setLastSeenAt } from '../lastSeen'
 import { msnButtonSx } from '../msnButtonStyle'
 import { skyScrollbarSx } from '../scrollbarStyle'
@@ -32,7 +32,7 @@ function Sidebar() {
   const auth = useAuth()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { conversationId } = useParams<{ conversationId: string }>()
+  const { chatId } = useParams<{ chatId: string }>()
   const token = auth.token ?? undefined
 
   const [isFormOpen, setIsFormOpen] = useState(false)
@@ -45,26 +45,26 @@ function Sidebar() {
     queryFn: () => listUsers(token!),
     enabled: !!token,
   })
-  const conversationsQuery = useQuery({
-    queryKey: ['conversations'],
-    queryFn: () => listConversations(token!),
+  const chatsQuery = useQuery({
+    queryKey: ['chats'],
+    queryFn: () => listChats(token!),
     enabled: !!token,
   })
 
   const handleUserSocketMessage = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ['conversations'] })
+    queryClient.invalidateQueries({ queryKey: ['chats'] })
   }, [queryClient])
 
   useUserSocket({ token, onMessage: handleUserSocketMessage })
 
   const createMutation = useMutation({
-    mutationFn: () => createConversation(selectedUserIds, groupName || undefined, token!),
-    onSuccess: (conversation) => {
-      queryClient.invalidateQueries({ queryKey: ['conversations'] })
+    mutationFn: () => createChat(selectedUserIds, groupName || undefined, token!),
+    onSuccess: (chat) => {
+      queryClient.invalidateQueries({ queryKey: ['chats'] })
       setIsFormOpen(false)
       setSelectedUserIds([])
       setGroupName('')
-      navigate(`/conversas/${conversation.id}`)
+      navigate(`/chats/${chat.id}`)
     },
   })
 
@@ -79,11 +79,11 @@ function Sidebar() {
     setGroupName('')
   }
 
-  function markCurrentConversationSeen() {
-    if (!conversationId || !meQuery.data?.id) return
-    const current = conversationsQuery.data?.find((c) => c.id === conversationId)
+  function markCurrentChatSeen() {
+    if (!chatId || !meQuery.data?.id) return
+    const current = chatsQuery.data?.find((c) => c.id === chatId)
     if (current) {
-      setLastSeenAt(meQuery.data.id, conversationId, current.last_message_at)
+      setLastSeenAt(meQuery.data.id, chatId, current.last_message_at)
     }
   }
 
@@ -128,7 +128,7 @@ function Sidebar() {
           }}
           sx={{ ...msnButtonSx, fontSize: '0.75rem' }}
         >
-          Nova conversa
+          Nova chat
         </Button>
       )}
       <Typography
@@ -145,7 +145,7 @@ function Sidebar() {
         }}
       >
         <GroupIcon fontSize="small" sx={{ color: 'primary.main' }} />
-        Conversas ({conversationsQuery.data?.length ?? 0})
+        Chats ({chatsQuery.data?.length ?? 0})
       </Typography>
       <List
         sx={{
@@ -156,13 +156,13 @@ function Sidebar() {
           ...skyScrollbarSx,
         }}
       >
-        {conversationsQuery.data?.map((conversation) => (
+        {chatsQuery.data?.map((chat) => (
           <ListItemButton
-            key={conversation.id}
+            key={chat.id}
             component={Link}
-            to={`/conversas/${conversation.id}`}
-            selected={conversation.id === conversationId}
-            onClick={markCurrentConversationSeen}
+            to={`/chats/${chat.id}`}
+            selected={chat.id === chatId}
+            onClick={markCurrentChatSeen}
             sx={{
               borderRadius: 1,
               mb: 0.5,
@@ -177,19 +177,19 @@ function Sidebar() {
               },
             }}
           >
-            {conversation.participant_user_ids.length > 2 ? (
-              <GroupIcon aria-label="Conversa em grupo" fontSize="small" sx={{ color: 'primary.main', mr: 1, flexShrink: 0 }} />
+            {chat.participant_user_ids.length > 2 ? (
+              <GroupIcon aria-label="Chat em grupo" fontSize="small" sx={{ color: 'primary.main', mr: 1, flexShrink: 0 }} />
             ) : (
-              <PersonIcon aria-label="Conversa individual" fontSize="small" sx={{ color: 'primary.main', mr: 1, flexShrink: 0 }} />
+              <PersonIcon aria-label="Chat individual" fontSize="small" sx={{ color: 'primary.main', mr: 1, flexShrink: 0 }} />
             )}
             <ListItemText
-              primary={conversationLabel(conversation, meQuery.data?.id, usernameById)}
+              primary={chatLabel(chat, meQuery.data?.id, usernameById)}
               slotProps={{ primary: { noWrap: true } }}
               sx={{ minWidth: 0 }}
             />
-            {conversation.id !== conversationId &&
+            {chat.id !== chatId &&
               meQuery.data?.id &&
-              hasNewActivity(meQuery.data.id, conversation) && (
+              hasNewActivity(meQuery.data.id, chat) && (
                 <Box
                   component="span"
                   aria-label="Nova atividade"
@@ -215,10 +215,10 @@ function Sidebar() {
         >
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-              Nova Conversa:
+              Novo Chat:
             </Typography>
             <IconButton
-              aria-label="Fechar criação de conversa"
+              aria-label="Fechar criação de chat"
               size="small"
               onClick={handleCloseForm}
               sx={{ color: 'error.main' }}

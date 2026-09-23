@@ -12,7 +12,7 @@ class Message(Base, CompanyScoped):
     __tablename__ = "messages"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    conversation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("conversations.id"))
+    chat_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("chats.id"))
     sender_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     sender_type: Mapped[str] = mapped_column(String)
     source_label: Mapped[str | None] = mapped_column(String, nullable=True)

@@ -6,7 +6,7 @@ SPA em React (Vite + TypeScript) do chat-app.
 
 - Vite + React + TypeScript
 - TanStack Query para estado de servidor
-- React Router para roteamento (a conversa ativa vive na URL, sem store global)
+- React Router para roteamento (o chat ativo vive na URL, sem store global)
 
 Veja `docs/decisions.md` na raiz do repositório para o raciocínio por trás dessas escolhas.
 
@@ -44,11 +44,11 @@ Faz type-check com `tsc -b` e gera um bundle de produção em `dist/`.
 ## Comportamentos conhecidos
 
 - **Mensagens de webhook agrupadas por `source_label`.** Quando `sender_id` é nulo (mensagem trazida por `POST /webhook/messages`), a lista de mensagens agrupa bolhas consecutivas por `source_label` em vez de `sender_id` — sem isso, mensagens de remetentes externos diferentes apareciam sob uma única bolha.
-- **Fallback explícito enquanto a identidade do usuário carrega.** A tela de conversa depende de duas queries assíncronas (usuário atual + lista de conversas); antes de ambas resolverem, o nome do participante mostrado usa um fallback explícito de "identidade ainda não conhecida" em vez de arriscar mostrar o participante errado.
+- **Fallback explícito enquanto a identidade do usuário carrega.** A tela de chat depende de duas queries assíncronas (usuário atual + lista de chats); antes de ambas resolverem, o nome do participante mostrado usa um fallback explícito de "identidade ainda não conhecida" em vez de arriscar mostrar o participante errado.
 
 ## Débito técnico conhecido
 
-- **Sem camada de hooks de dados dedicada.** `useQuery`/`useMutation` são chamados soltos em cada rota (`src/routes/`), cada uma reescrevendo a query key na mão (`['conversations']`, `['messages', conversationId]`, `['me']`, `['users']`). Um typo numa key quebra a invalidação de cache silenciosamente, sem checagem do compilador — centralizar isso em algo como `src/lib/queries/` fecharia essa lacuna.
+- **Sem camada de hooks de dados dedicada.** `useQuery`/`useMutation` são chamados soltos em cada rota (`src/routes/`), cada uma reescrevendo a query key na mão (`['chats']`, `['messages', chatId]`, `['me']`, `['users']`). Um typo numa key quebra a invalidação de cache silenciosamente, sem checagem do compilador — centralizar isso em algo como `src/lib/queries/` fecharia essa lacuna.
 - **Contrato de API mantido à mão.** As interfaces TypeScript em `src/lib/api.ts` são reescritas manualmente a partir dos schemas Pydantic do backend, sem geração automática a partir do OpenAPI que o FastAPI já expõe. Uma mudança de schema no backend não quebra o build do frontend — só quebra em runtime, silenciosamente.
 
 ## Testes
@@ -59,4 +59,4 @@ npm run test
 
 Roda a suíte de Vitest + React Testing Library.
 
-**Lacuna conhecida:** o drawer mobile da lista de conversas (`ConversasLayout`) não tem cobertura de teste automatizada própria — verificação manual apenas, por decisão explícita ao escopo daquele ticket.
+**Lacuna conhecida:** o drawer mobile da lista de chats (`ChatsLayout`) não tem cobertura de teste automatizada própria — verificação manual apenas, por decisão explícita ao escopo daquele ticket.

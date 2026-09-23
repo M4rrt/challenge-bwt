@@ -1,19 +1,19 @@
 import { useEffect } from 'react'
 import { API_URL, toWsUrl } from '../../../lib/api'
 
-interface UseConversationSocketOptions {
-  conversationId: string
+interface UseChatSocketOptions {
+  chatId: string
   token: string | undefined
   onMessage: (data: string) => void
   reconnectDelayMs?: number
 }
 
-export function useConversationSocket({
-  conversationId,
+export function useChatSocket({
+  chatId,
   token,
   onMessage,
   reconnectDelayMs = 2000,
-}: UseConversationSocketOptions): void {
+}: UseChatSocketOptions): void {
   useEffect(() => {
     if (!token) {
       return
@@ -24,7 +24,7 @@ export function useConversationSocket({
     let reconnectTimer: ReturnType<typeof setTimeout>
 
     function connect() {
-      const url = `${toWsUrl(API_URL)}/websocket/conversations/${conversationId}?token=${token}`
+      const url = `${toWsUrl(API_URL)}/websocket/chats/${chatId}?token=${token}`
       socket = new WebSocket(url)
       socket.onmessage = (event) => onMessage(event.data)
       socket.onclose = () => {
@@ -45,5 +45,5 @@ export function useConversationSocket({
         socket.addEventListener('open', () => socket.close(), { once: true })
       }
     }
-  }, [conversationId, token, onMessage, reconnectDelayMs])
+  }, [chatId, token, onMessage, reconnectDelayMs])
 }

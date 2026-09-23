@@ -4,10 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from '../../lib/auth/AuthContext'
-import { getMe, listConversations, listMessages, listUsers } from '../../lib/api'
-import ConversasLayout from './ConversasLayout'
-import ConversaEmptyState from './ConversaEmptyState/ConversaEmptyState'
-import Conversa from './Conversa/Conversa'
+import { getMe, listChats, listMessages, listUsers } from '../../lib/api'
+import ChatsLayout from './ChatsLayout'
+import ChatEmptyState from './ChatEmptyState/ChatEmptyState'
+import ChatThread from './ChatThread/ChatThread'
 
 vi.mock('../../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../../lib/api')>('../../lib/api')
@@ -15,7 +15,7 @@ vi.mock('../../lib/api', async () => {
     ...actual,
     getMe: vi.fn(),
     listUsers: vi.fn(),
-    listConversations: vi.fn(),
+    listChats: vi.fn(),
     listMessages: vi.fn(),
   }
 })
@@ -47,20 +47,20 @@ beforeEach(() => {
     { id: 'beto-id', username: 'beto' },
     { id: 'carla-id', username: 'carla' },
   ])
-  vi.mocked(listConversations).mockReset().mockResolvedValue([])
+  vi.mocked(listChats).mockReset().mockResolvedValue([])
   vi.mocked(listMessages).mockReset().mockResolvedValue([])
 })
 
-describe('ConversasLayout', () => {
-  it('renders the empty-state placeholder when no conversation is selected', async () => {
+describe('ChatsLayout', () => {
+  it('renders the empty-state placeholder when no chat is selected', async () => {
     const queryClient = new QueryClient()
     render(
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <MemoryRouter initialEntries={['/conversas']}>
+          <MemoryRouter initialEntries={['/chats']}>
             <Routes>
-              <Route path="/conversas" element={<ConversasLayout />}>
-                <Route index element={<ConversaEmptyState />} />
+              <Route path="/chats" element={<ChatsLayout />}>
+                <Route index element={<ChatEmptyState />} />
               </Route>
             </Routes>
           </MemoryRouter>
@@ -68,7 +68,7 @@ describe('ConversasLayout', () => {
       </QueryClientProvider>,
     )
 
-    expect(await screen.findByText('Selecione uma conversa para começar')).toBeInTheDocument()
+    expect(await screen.findByText('Selecione um chat para começar')).toBeInTheDocument()
   })
 
   it('renders a "Usar webHook" link pointing to /webhook', async () => {
@@ -76,10 +76,10 @@ describe('ConversasLayout', () => {
     render(
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <MemoryRouter initialEntries={['/conversas']}>
+          <MemoryRouter initialEntries={['/chats']}>
             <Routes>
-              <Route path="/conversas" element={<ConversasLayout />}>
-                <Route index element={<ConversaEmptyState />} />
+              <Route path="/chats" element={<ChatsLayout />}>
+                <Route index element={<ChatEmptyState />} />
               </Route>
             </Routes>
           </MemoryRouter>
@@ -93,22 +93,22 @@ describe('ConversasLayout', () => {
     )
   })
 
-  it('does not show a stale new-activity indicator on the conversation just left, after a live message arrived while it was open', async () => {
-    vi.mocked(listConversations)
+  it('does not show a stale new-activity indicator on the chat just left, after a live message arrived while it was open', async () => {
+    vi.mocked(listChats)
       .mockResolvedValueOnce([
-        { id: 'conv-1', name: null, participant_user_ids: ['me-id', 'beto-id'], last_message_at: '2026-08-06T12:00:00Z' },
-        { id: 'conv-2', name: null, participant_user_ids: ['me-id', 'carla-id'], last_message_at: null },
+        { id: 'chat-1', name: null, participant_user_ids: ['me-id', 'beto-id'], last_message_at: '2026-08-06T12:00:00Z' },
+        { id: 'chat-2', name: null, participant_user_ids: ['me-id', 'carla-id'], last_message_at: null },
       ])
       .mockResolvedValue([
-        { id: 'conv-1', name: null, participant_user_ids: ['me-id', 'beto-id'], last_message_at: '2026-08-06T12:05:00Z' },
-        { id: 'conv-2', name: null, participant_user_ids: ['me-id', 'carla-id'], last_message_at: null },
+        { id: 'chat-1', name: null, participant_user_ids: ['me-id', 'beto-id'], last_message_at: '2026-08-06T12:05:00Z' },
+        { id: 'chat-2', name: null, participant_user_ids: ['me-id', 'carla-id'], last_message_at: null },
       ])
-    vi.mocked(listMessages).mockImplementation(async (conversationId: string) =>
-      conversationId === 'conv-1'
+    vi.mocked(listMessages).mockImplementation(async (chatId: string) =>
+      chatId === 'chat-1'
         ? [
             {
               id: 'msg-1',
-              conversation_id: 'conv-1',
+              chat_id: 'chat-1',
               sender_id: 'beto-id',
               sender_type: 'user',
               source_label: null,
@@ -123,10 +123,10 @@ describe('ConversasLayout', () => {
     render(
       <QueryClientProvider client={new QueryClient()}>
         <AuthProvider>
-          <MemoryRouter initialEntries={['/conversas/conv-1']}>
+          <MemoryRouter initialEntries={['/chats/chat-1']}>
             <Routes>
-              <Route path="/conversas" element={<ConversasLayout />}>
-                <Route path=":conversationId" element={<Conversa />} />
+              <Route path="/chats" element={<ChatsLayout />}>
+                <Route path=":chatId" element={<ChatThread />} />
               </Route>
             </Routes>
           </MemoryRouter>
@@ -137,20 +137,20 @@ describe('ConversasLayout', () => {
     await screen.findByText('oi ana')
     await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(2))
 
-    const conversationSocket = FakeWebSocket.instances.find((instance) =>
-      instance.url.includes('/websocket/conversations/'),
+    const chatSocket = FakeWebSocket.instances.find((instance) =>
+      instance.url.includes('/websocket/chats/'),
     )!
     const userSocket = FakeWebSocket.instances.find((instance) =>
       instance.url.includes('/websocket/users/me'),
     )!
 
-    // A new message arrives in conv-1 while it's still open: the conversation
-    // socket delivers it to Conversa, and the user socket tells Sidebar to
+    // A new message arrives in chat-1 while it's still open: the chat
+    // socket delivers it to ChatThread, and the user socket tells Sidebar to
     // refetch, picking up the newer last_message_at from the mock above.
-    conversationSocket.onmessage?.({
+    chatSocket.onmessage?.({
       data: JSON.stringify({
         id: 'msg-2',
-        conversation_id: 'conv-1',
+        chat_id: 'chat-1',
         sender_id: 'beto-id',
         sender_type: 'user',
         source_label: null,
@@ -160,7 +160,7 @@ describe('ConversasLayout', () => {
     })
     userSocket.onmessage?.({ data: '{}' })
 
-    await waitFor(() => expect(listConversations).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(listChats).toHaveBeenCalledTimes(2))
     await screen.findByText('chegou ao vivo')
 
     await user.click(screen.getByText('carla'))

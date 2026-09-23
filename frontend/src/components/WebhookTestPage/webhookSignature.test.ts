@@ -7,8 +7,8 @@ describe('signWebhookBody', () => {
     // hmac.new(b'test-secret', body, hashlib.sha256).hexdigest() to verify
     // parity with the backend's verify_webhook_signature.
     const secret = 'test-secret'
-    const body = JSON.stringify({ conversation_id: 'conv-1', body: 'oi', source_label: 'crm' })
-    const expected = '3107234a4352aaea341c29ccd7ab7dc1c55a64a8c622880eced3ac5772ecc1d6'
+    const body = JSON.stringify({ chat_id: 'chat-1', body: 'oi', source_label: 'crm' })
+    const expected = 'c3cbc4f751d500b9da3482e84bd3bee85d9baa8eccec085d4d3678e4fe83760e'
 
     const result = await signWebhookBody(secret, body)
 

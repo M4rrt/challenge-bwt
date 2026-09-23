@@ -9,7 +9,7 @@ from app.core.config import settings
 from app.models.message import Message
 from app.schemas.message import MessageRead
 
-CONVERSATION_CHANNEL_PATTERN = "conversation:*"
+CHAT_CHANNEL_PATTERN = "chat:*"
 USER_CHANNEL_PATTERN = "user:*"
 
 
@@ -20,16 +20,16 @@ class ConnectionManager:
             defaultdict(set)
         )
 
-    def connect(self, conversation_id: uuid.UUID, websocket: WebSocket) -> None:
-        self._connections[conversation_id].add(websocket)
+    def connect(self, chat_id: uuid.UUID, websocket: WebSocket) -> None:
+        self._connections[chat_id].add(websocket)
 
-    def disconnect(self, conversation_id: uuid.UUID, websocket: WebSocket) -> None:
-        self._connections[conversation_id].discard(websocket)
-        if not self._connections[conversation_id]:
-            del self._connections[conversation_id]
+    def disconnect(self, chat_id: uuid.UUID, websocket: WebSocket) -> None:
+        self._connections[chat_id].discard(websocket)
+        if not self._connections[chat_id]:
+            del self._connections[chat_id]
 
-    def connections_for(self, conversation_id: uuid.UUID) -> set[WebSocket]:
-        return self._connections.get(conversation_id, set())
+    def connections_for(self, chat_id: uuid.UUID) -> set[WebSocket]:
+        return self._connections.get(chat_id, set())
 
     def connect_user(
         self, company_id: uuid.UUID, user_id: uuid.UUID, websocket: WebSocket
@@ -55,8 +55,8 @@ connection_manager = ConnectionManager()
 _publish_client: redis.Redis = redis.Redis.from_url(settings.redis_url, decode_responses=True)
 
 
-def _channel_for(conversation_id: uuid.UUID) -> str:
-    return f"conversation:{conversation_id}"
+def _channel_for(chat_id: uuid.UUID) -> str:
+    return f"chat:{chat_id}"
 
 
 def _channel_for_user(company_id: uuid.UUID, user_id: uuid.UUID) -> str:
@@ -72,14 +72,14 @@ def _channel_for_user(company_id: uuid.UUID, user_id: uuid.UUID) -> str:
 async def publish_message(message: Message) -> None:
     payload = MessageRead(
         id=message.id,
-        conversation_id=message.conversation_id,
+        chat_id=message.chat_id,
         sender_id=message.sender_id,
         sender_type=message.sender_type,
         source_label=message.source_label,
         body=message.body,
         created_at=message.created_at,
     ).model_dump_json()
-    await _publish_client.publish(_channel_for(message.conversation_id), payload)
+    await _publish_client.publish(_channel_for(message.chat_id), payload)
 
 
 async def publish_to_user(company_id: uuid.UUID, user_id: uuid.UUID, payload: str) -> None:
@@ -91,7 +91,7 @@ async def run_subscriber(subscribed: asyncio.Event | None = None) -> None:
         settings.redis_url, decode_responses=True
     )
     pubsub = subscriber_client.pubsub()
-    await pubsub.psubscribe(CONVERSATION_CHANNEL_PATTERN, USER_CHANNEL_PATTERN)
+    await pubsub.psubscribe(CHAT_CHANNEL_PATTERN, USER_CHANNEL_PATTERN)
     if subscribed is not None:
         subscribed.set()
     try:
@@ -99,9 +99,9 @@ async def run_subscriber(subscribed: asyncio.Event | None = None) -> None:
             if event["type"] != "pmessage":
                 continue
             channel = event["channel"]
-            if channel.startswith("conversation:"):
-                conversation_id = uuid.UUID(channel.removeprefix("conversation:"))
-                for websocket in connection_manager.connections_for(conversation_id):
+            if channel.startswith("chat:"):
+                chat_id = uuid.UUID(channel.removeprefix("chat:"))
+                for websocket in connection_manager.connections_for(chat_id):
                     await websocket.send_text(event["data"])
             elif channel.startswith("user:"):
                 company_id, user_id = (
@@ -110,6 +110,6 @@ async def run_subscriber(subscribed: asyncio.Event | None = None) -> None:
                 for websocket in connection_manager.connections_for_user(company_id, user_id):
                     await websocket.send_text(event["data"])
     finally:
-        await pubsub.punsubscribe(CONVERSATION_CHANNEL_PATTERN, USER_CHANNEL_PATTERN)
+        await pubsub.punsubscribe(CHAT_CHANNEL_PATTERN, USER_CHANNEL_PATTERN)
         await pubsub.aclose()
         await subscriber_client.aclose()

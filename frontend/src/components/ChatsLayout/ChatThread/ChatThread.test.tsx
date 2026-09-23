@@ -4,8 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from '../../../lib/auth/AuthContext'
-import { getMe, listConversations, listMessages, listUsers, sendMessage } from '../../../lib/api'
-import Conversa from './Conversa'
+import { getMe, listChats, listMessages, listUsers, sendMessage } from '../../../lib/api'
+import ChatThread from './ChatThread'
 
 vi.mock('../../../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../../../lib/api')>('../../../lib/api')
@@ -13,7 +13,7 @@ vi.mock('../../../lib/api', async () => {
     ...actual,
     getMe: vi.fn(),
     listUsers: vi.fn(),
-    listConversations: vi.fn(),
+    listChats: vi.fn(),
     listMessages: vi.fn(),
     sendMessage: vi.fn(),
   }
@@ -37,15 +37,15 @@ const USERS = [
   { id: 'beto-id', username: 'beto' },
 ]
 
-function renderConversa() {
+function renderChatThread() {
   const queryClient = new QueryClient()
   localStorage.setItem('chat-app:token', 'token-123')
   return render(
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <MemoryRouter initialEntries={['/conversas/conv-1']}>
+        <MemoryRouter initialEntries={['/chats/chat-1']}>
           <Routes>
-            <Route path="/conversas/:conversationId" element={<Conversa />} />
+            <Route path="/chats/:chatId" element={<ChatThread />} />
           </Routes>
         </MemoryRouter>
       </AuthProvider>
@@ -53,16 +53,16 @@ function renderConversa() {
   )
 }
 
-function renderConversaWithNavigation() {
+function renderChatThreadWithNavigation() {
   const queryClient = new QueryClient()
   localStorage.setItem('chat-app:token', 'token-123')
   return render(
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <MemoryRouter initialEntries={['/conversas/conv-1']}>
-          <Link to="/conversas/conv-2">ir para conv-2</Link>
+        <MemoryRouter initialEntries={['/chats/chat-1']}>
+          <Link to="/chats/chat-2">ir para chat-2</Link>
           <Routes>
-            <Route path="/conversas/:conversationId" element={<Conversa />} />
+            <Route path="/chats/:chatId" element={<ChatThread />} />
           </Routes>
         </MemoryRouter>
       </AuthProvider>
@@ -77,64 +77,64 @@ beforeEach(() => {
 
   vi.mocked(getMe).mockReset().mockResolvedValue(ME)
   vi.mocked(listUsers).mockReset().mockResolvedValue(USERS)
-  vi.mocked(listConversations).mockReset().mockResolvedValue([
-    { id: 'conv-1', name: null, participant_user_ids: ['me-id', 'beto-id'], last_message_at: null },
+  vi.mocked(listChats).mockReset().mockResolvedValue([
+    { id: 'chat-1', name: null, participant_user_ids: ['me-id', 'beto-id'], last_message_at: null },
   ])
   vi.mocked(listMessages).mockReset()
   vi.mocked(sendMessage).mockReset()
 })
 
-describe('Conversa', () => {
-  it('shows the other participant\'s username at the top for an unnamed 1:1 conversation', async () => {
+describe('Chat', () => {
+  it('shows the other participant\'s username at the top for an unnamed 1:1 chat', async () => {
     vi.mocked(listMessages).mockResolvedValue([])
-    renderConversa()
+    renderChatThread()
 
     expect(await screen.findByRole('heading', { name: 'beto' })).toBeInTheDocument()
   })
 
-  it('shows an individual-conversation icon in the header for a 1:1 conversation', async () => {
+  it('shows an individual-chat icon in the header for a 1:1 chat', async () => {
     vi.mocked(listMessages).mockResolvedValue([])
-    renderConversa()
+    renderChatThread()
 
-    expect(await screen.findByLabelText('Conversa individual')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Chat individual')).toBeInTheDocument()
   })
 
-  it('shows the conversation name at the top for a named/group conversation', async () => {
-    vi.mocked(listConversations).mockResolvedValue([
+  it('shows the chat name at the top for a named/group chat', async () => {
+    vi.mocked(listChats).mockResolvedValue([
       {
-        id: 'conv-1',
+        id: 'chat-1',
         name: 'Trio',
         participant_user_ids: ['me-id', 'beto-id', 'carla-id'],
         last_message_at: null,
       },
     ])
     vi.mocked(listMessages).mockResolvedValue([])
-    renderConversa()
+    renderChatThread()
 
     expect(await screen.findByRole('heading', { name: 'Trio' })).toBeInTheDocument()
   })
 
-  it('shows a group-conversation icon in the header for a group conversation, not the individual one', async () => {
-    vi.mocked(listConversations).mockResolvedValue([
+  it('shows a group-chat icon in the header for a group chat, not the individual one', async () => {
+    vi.mocked(listChats).mockResolvedValue([
       {
-        id: 'conv-1',
+        id: 'chat-1',
         name: 'Trio',
         participant_user_ids: ['me-id', 'beto-id', 'carla-id'],
         last_message_at: null,
       },
     ])
     vi.mocked(listMessages).mockResolvedValue([])
-    renderConversa()
+    renderChatThread()
 
-    expect(await screen.findByLabelText('Conversa em grupo')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Conversa individual')).not.toBeInTheDocument()
+    expect(await screen.findByLabelText('Chat em grupo')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Chat individual')).not.toBeInTheDocument()
   })
 
   it('renders the message backlog on open', async () => {
     vi.mocked(listMessages).mockResolvedValue([
       {
         id: 'msg-1',
-        conversation_id: 'conv-1',
+        chat_id: 'chat-1',
         sender_id: 'beto-id',
         sender_type: 'user',
         source_label: null,
@@ -142,14 +142,14 @@ describe('Conversa', () => {
         created_at: '2026-08-06T12:00:00Z',
       },
     ])
-    renderConversa()
+    renderChatThread()
 
     expect(await screen.findByText('oi ana')).toBeInTheDocument()
   })
 
   it('shows a message pushed over the websocket without refetching the backlog', async () => {
     vi.mocked(listMessages).mockResolvedValue([])
-    renderConversa()
+    renderChatThread()
 
     await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1))
     expect(listMessages).toHaveBeenCalledTimes(1)
@@ -158,7 +158,7 @@ describe('Conversa', () => {
     socket.onmessage?.({
       data: JSON.stringify({
         id: 'msg-2',
-        conversation_id: 'conv-1',
+        chat_id: 'chat-1',
         sender_id: 'beto-id',
         sender_type: 'user',
         source_label: null,
@@ -180,17 +180,17 @@ describe('Conversa', () => {
       }),
     )
     const user = userEvent.setup()
-    renderConversa()
+    renderChatThread()
 
     const input = await screen.findByRole('textbox')
     await user.type(input, 'oi beto{Enter}')
 
-    expect(sendMessage).toHaveBeenCalledWith('conv-1', 'oi beto', 'token-123')
+    expect(sendMessage).toHaveBeenCalledWith('chat-1', 'oi beto', 'token-123')
     expect(screen.queryByText('oi beto')).not.toBeInTheDocument()
 
     resolveSend({
       id: 'msg-3',
-      conversation_id: 'conv-1',
+      chat_id: 'chat-1',
       sender_id: 'me-id',
       sender_type: 'user',
       source_label: null,
@@ -205,7 +205,7 @@ describe('Conversa', () => {
     vi.mocked(listMessages).mockResolvedValue([
       {
         id: 'msg-1',
-        conversation_id: 'conv-1',
+        chat_id: 'chat-1',
         sender_id: 'me-id',
         sender_type: 'user',
         source_label: null,
@@ -214,7 +214,7 @@ describe('Conversa', () => {
       },
       {
         id: 'msg-2',
-        conversation_id: 'conv-1',
+        chat_id: 'chat-1',
         sender_id: 'beto-id',
         sender_type: 'user',
         source_label: null,
@@ -223,7 +223,7 @@ describe('Conversa', () => {
       },
       {
         id: 'msg-3',
-        conversation_id: 'conv-1',
+        chat_id: 'chat-1',
         sender_id: null,
         sender_type: 'external',
         source_label: 'Zapier',
@@ -231,7 +231,7 @@ describe('Conversa', () => {
         created_at: '2026-08-06T12:02:00Z',
       },
     ])
-    renderConversa()
+    renderChatThread()
 
     expect(await screen.findByText('minha mensagem')).toHaveAttribute(
       'data-sender-kind',
@@ -248,7 +248,7 @@ describe('Conversa', () => {
     vi.mocked(listMessages).mockResolvedValue([
       {
         id: 'msg-1',
-        conversation_id: 'conv-1',
+        chat_id: 'chat-1',
         sender_id: 'me-id',
         sender_type: 'user',
         source_label: null,
@@ -257,7 +257,7 @@ describe('Conversa', () => {
       },
       {
         id: 'msg-2',
-        conversation_id: 'conv-1',
+        chat_id: 'chat-1',
         sender_id: null,
         sender_type: 'external',
         source_label: 'Zapier',
@@ -265,7 +265,7 @@ describe('Conversa', () => {
         created_at: '2026-08-06T12:02:00Z',
       },
     ])
-    renderConversa()
+    renderChatThread()
 
     await screen.findByText('minha mensagem')
     expect(
@@ -274,11 +274,11 @@ describe('Conversa', () => {
     expect(screen.getAllByLabelText('Essa mensagem veio de um serviço externo')).toHaveLength(1)
   })
 
-  it('records the last-seen cursor for the conversation when it closes', async () => {
+  it('records the last-seen cursor for the chat when it closes', async () => {
     vi.mocked(listMessages).mockResolvedValue([
       {
         id: 'msg-1',
-        conversation_id: 'conv-1',
+        chat_id: 'chat-1',
         sender_id: 'beto-id',
         sender_type: 'user',
         source_label: null,
@@ -286,21 +286,21 @@ describe('Conversa', () => {
         created_at: '2026-08-06T12:00:00Z',
       },
     ])
-    const { unmount } = renderConversa()
+    const { unmount } = renderChatThread()
 
     await screen.findByText('oi ana')
     unmount()
 
-    expect(localStorage.getItem('chat-app:lastSeen:me-id:conv-1')).toBe('2026-08-06T12:00:00Z')
+    expect(localStorage.getItem('chat-app:lastSeen:me-id:chat-1')).toBe('2026-08-06T12:00:00Z')
   })
 
-  it('records the last-seen cursor for the conversation left when switching to another one', async () => {
-    vi.mocked(listMessages).mockImplementation(async (conversationId: string) =>
-      conversationId === 'conv-1'
+  it('records the last-seen cursor for the chat left when switching to another one', async () => {
+    vi.mocked(listMessages).mockImplementation(async (chatId: string) =>
+      chatId === 'chat-1'
         ? [
             {
               id: 'msg-1',
-              conversation_id: 'conv-1',
+              chat_id: 'chat-1',
               sender_id: 'beto-id',
               sender_type: 'user',
               source_label: null,
@@ -311,24 +311,24 @@ describe('Conversa', () => {
         : [],
     )
     const user = userEvent.setup()
-    renderConversaWithNavigation()
+    renderChatThreadWithNavigation()
 
     await screen.findByText('oi ana')
 
-    await user.click(screen.getByText('ir para conv-2'))
+    await user.click(screen.getByText('ir para chat-2'))
 
-    expect(localStorage.getItem('chat-app:lastSeen:me-id:conv-1')).toBe('2026-08-06T12:00:00Z')
+    expect(localStorage.getItem('chat-app:lastSeen:me-id:chat-1')).toBe('2026-08-06T12:00:00Z')
   })
 
-  it('records a last-seen cursor even for a conversation with no messages, when leaving it', async () => {
+  it('records a last-seen cursor even for a chat with no messages, when leaving it', async () => {
     vi.mocked(listMessages).mockResolvedValue([])
-    const { unmount } = renderConversa()
+    const { unmount } = renderChatThread()
 
     await waitFor(() =>
-      expect(localStorage.getItem('chat-app:lastSeen:me-id:conv-1')).not.toBeNull(),
+      expect(localStorage.getItem('chat-app:lastSeen:me-id:chat-1')).not.toBeNull(),
     )
     unmount()
 
-    expect(localStorage.getItem('chat-app:lastSeen:me-id:conv-1')).not.toBeNull()
+    expect(localStorage.getItem('chat-app:lastSeen:me-id:chat-1')).not.toBeNull()
   })
 })

@@ -5,7 +5,7 @@ import { groupMessages } from './messageGrouping'
 function makeMessage(overrides: Partial<Message>): Message {
   return {
     id: 'msg-1',
-    conversation_id: 'conv-1',
+    chat_id: 'chat-1',
     sender_id: 'user-1',
     sender_type: 'user',
     source_label: null,

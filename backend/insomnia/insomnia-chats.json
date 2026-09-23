@@ -7,8 +7,8 @@
     {
       "_id": "wrk_chatapp",
       "_type": "workspace",
-      "name": "Chat App — Ticket 04 (Conversas)",
-      "description": "Auth (ticket 03) + Conversations (ticket 04) manual test flow.",
+      "name": "Chat App — Ticket 04 (Chats)",
+      "description": "Auth (ticket 03) + Chats (ticket 04) manual test flow.",
       "scope": "collection"
     },
     {
@@ -35,7 +35,7 @@
       "_type": "request_group",
       "parentId": "wrk_chatapp",
       "name": "01 - Auth (register + login 4 users)",
-      "description": "Run in order. After each register, copy the response `id` into the matching user_x_id env var. After each login, copy `access_token` into the matching token_x env var. User D never gets added to a conversation — it exists to prove isolation.",
+      "description": "Run in order. After each register, copy the response `id` into the matching user_x_id env var. After each login, copy `access_token` into the matching token_x env var. User D never gets added to a chat — it exists to prove isolation.",
       "metaSortKey": 0
     },
     {
@@ -87,7 +87,7 @@
       "_id": "req_register_d",
       "_type": "request",
       "parentId": "fld_auth",
-      "name": "Register User D (davi, no conversations)",
+      "name": "Register User D (davi, no chats)",
       "method": "POST",
       "url": "{{ _.base_url }}/auth/register",
       "body": {
@@ -95,7 +95,7 @@
         "text": "{\n  \"email\": \"davi@example.com\",\n  \"username\": \"davi\",\n  \"password\": \"Senha-Forte-123\"\n}"
       },
       "headers": [{ "name": "Content-Type", "value": "application/json" }],
-      "description": "Copy response `id` -> env `user_d_id`. This user is never added to any conversation.",
+      "description": "Copy response `id` -> env `user_d_id`. This user is never added to any chat.",
       "metaSortKey": 3
     },
     {
@@ -170,23 +170,23 @@
       "metaSortKey": 8
     },
     {
-      "_id": "fld_conversations",
+      "_id": "fld_chats",
       "_type": "request_group",
       "parentId": "wrk_chatapp",
-      "name": "02 - Conversations (ticket 04)",
+      "name": "02 - Chats (ticket 04)",
       "description": "Run after the Auth folder so token_x/user_x_id env vars are filled in.",
       "metaSortKey": 1
     },
     {
       "_id": "req_create_1to1",
       "_type": "request",
-      "parentId": "fld_conversations",
-      "name": "Create 1:1 conversation (A -> B)",
+      "parentId": "fld_chats",
+      "name": "Create 1:1 chat (A -> B)",
       "method": "POST",
-      "url": "{{ _.base_url }}/conversations",
+      "url": "{{ _.base_url }}/chats",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"participant_user_ids\": [\"{{ _.user_b_id }}\"]\n}"
+        "text": "{\n  \"type\": \"staff\",\n  \"participants\": [{ \"user_id\": \"{{ _.user_b_id }}\", \"user_kind\": \"staff\" }]\n}"
       },
       "headers": [
         { "name": "Content-Type", "value": "application/json" },
@@ -198,13 +198,13 @@
     {
       "_id": "req_create_1to1_dup",
       "_type": "request",
-      "parentId": "fld_conversations",
+      "parentId": "fld_chats",
       "name": "Create 1:1 again (idempotency check)",
       "method": "POST",
-      "url": "{{ _.base_url }}/conversations",
+      "url": "{{ _.base_url }}/chats",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"participant_user_ids\": [\"{{ _.user_b_id }}\"]\n}"
+        "text": "{\n  \"type\": \"staff\",\n  \"participants\": [{ \"user_id\": \"{{ _.user_b_id }}\", \"user_kind\": \"staff\" }]\n}"
       },
       "headers": [
         { "name": "Content-Type", "value": "application/json" },
@@ -216,13 +216,13 @@
     {
       "_id": "req_create_group",
       "_type": "request",
-      "parentId": "fld_conversations",
-      "name": "Create group conversation (A, B, C)",
+      "parentId": "fld_chats",
+      "name": "Create group chat (A, B, C)",
       "method": "POST",
-      "url": "{{ _.base_url }}/conversations",
+      "url": "{{ _.base_url }}/chats",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"participant_user_ids\": [\"{{ _.user_b_id }}\", \"{{ _.user_c_id }}\"],\n  \"name\": \"Trio\"\n}"
+        "text": "{\n  \"type\": \"staff\",\n  \"participants\": [{ \"user_id\": \"{{ _.user_b_id }}\", \"user_kind\": \"staff\" }, { \"user_id\": \"{{ _.user_c_id }}\", \"user_kind\": \"staff\" }],\n  \"name\": \"Trio\"\n}"
       },
       "headers": [
         { "name": "Content-Type", "value": "application/json" },
@@ -234,13 +234,13 @@
     {
       "_id": "req_create_group_no_name",
       "_type": "request",
-      "parentId": "fld_conversations",
+      "parentId": "fld_chats",
       "name": "Create group WITHOUT name (expect 422)",
       "method": "POST",
-      "url": "{{ _.base_url }}/conversations",
+      "url": "{{ _.base_url }}/chats",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"participant_user_ids\": [\"{{ _.user_b_id }}\", \"{{ _.user_c_id }}\"]\n}"
+        "text": "{\n  \"type\": \"staff\",\n  \"participants\": [{ \"user_id\": \"{{ _.user_b_id }}\", \"user_kind\": \"staff\" }, { \"user_id\": \"{{ _.user_c_id }}\", \"user_kind\": \"staff\" }]\n}"
       },
       "headers": [
         { "name": "Content-Type", "value": "application/json" },
@@ -252,34 +252,34 @@
     {
       "_id": "req_list_a",
       "_type": "request",
-      "parentId": "fld_conversations",
-      "name": "List conversations as A",
+      "parentId": "fld_chats",
+      "name": "List chats as A",
       "method": "GET",
-      "url": "{{ _.base_url }}/conversations",
+      "url": "{{ _.base_url }}/chats",
       "headers": [{ "name": "Authorization", "value": "Bearer {{ _.token_a }}" }],
-      "description": "Expect the 1:1 (A,B) and the group (A,B,C) — 2 conversations.",
+      "description": "Expect the 1:1 (A,B) and the group (A,B,C) — 2 chats.",
       "metaSortKey": 4
     },
     {
       "_id": "req_list_c",
       "_type": "request",
-      "parentId": "fld_conversations",
-      "name": "List conversations as C",
+      "parentId": "fld_chats",
+      "name": "List chats as C",
       "method": "GET",
-      "url": "{{ _.base_url }}/conversations",
+      "url": "{{ _.base_url }}/chats",
       "headers": [{ "name": "Authorization", "value": "Bearer {{ _.token_c }}" }],
-      "description": "Expect only the group conversation (C is not part of the A/B 1:1) — 1 conversation.",
+      "description": "Expect only the group chat (C is not part of the A/B 1:1) — 1 chat.",
       "metaSortKey": 5
     },
     {
       "_id": "req_list_d",
       "_type": "request",
-      "parentId": "fld_conversations",
-      "name": "List conversations as D (isolation check)",
+      "parentId": "fld_chats",
+      "name": "List chats as D (isolation check)",
       "method": "GET",
-      "url": "{{ _.base_url }}/conversations",
+      "url": "{{ _.base_url }}/chats",
       "headers": [{ "name": "Authorization", "value": "Bearer {{ _.token_d }}" }],
-      "description": "D was never added to any conversation. Expect an empty array `[]` — proves isolation.",
+      "description": "D was never added to any chat. Expect an empty array `[]` — proves isolation.",
       "metaSortKey": 6
     }
   ]

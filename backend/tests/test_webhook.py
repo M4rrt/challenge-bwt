@@ -9,6 +9,7 @@ from httpx_ws import aconnect_ws
 
 from app.core.config import settings
 from app.main import app
+from tests.chats import open_chat_id
 from tests.chat_tokens import DEFAULT_COMPANY_ID, bearer, caller_token
 
 
@@ -16,27 +17,16 @@ def _sign(body: bytes) -> str:
     return hmac.new(settings.webhook_hmac_secret.encode(), body, hashlib.sha256).hexdigest()
 
 
-async def _create_conversation_via_api(
-    client: AsyncClient, headers: dict[str, str], participant_ids: list[str]
-) -> str:
-    response = await client.post(
-        "/conversations",
-        json={"participant_user_ids": participant_ids},
-        headers=headers,
-    )
-    return response.json()["id"]
-
-
 async def test_valid_signature_persists_external_message(client: AsyncClient):
     _, _token = caller_token()
     headers_a = bearer(_token)
     user_b_id, _ = caller_token()
-    conversation_id = await _create_conversation_via_api(client, headers_a, [user_b_id])
+    chat_id = await open_chat_id(client, headers_a, user_b_id)
 
     body = json.dumps(
         {
             "company_id": str(DEFAULT_COMPANY_ID),
-            "conversation_id": conversation_id,
+            "chat_id": chat_id,
             "body": "shipped",
             "source_label": "Shipping Bot",
         }
@@ -50,7 +40,7 @@ async def test_valid_signature_persists_external_message(client: AsyncClient):
 
     assert response.status_code == 201
     payload = response.json()
-    assert payload["conversation_id"] == conversation_id
+    assert payload["chat_id"] == chat_id
     assert payload["body"] == "shipped"
     assert payload["sender_id"] is None
     assert payload["sender_type"] == "external"
@@ -61,11 +51,11 @@ async def test_missing_signature_is_rejected(client: AsyncClient):
     _, _token = caller_token()
     headers_a = bearer(_token)
     user_b_id, _ = caller_token()
-    conversation_id = await _create_conversation_via_api(client, headers_a, [user_b_id])
+    chat_id = await open_chat_id(client, headers_a, user_b_id)
 
     body = json.dumps({
         "company_id": str(DEFAULT_COMPANY_ID),
-        "conversation_id": conversation_id,
+        "chat_id": chat_id,
         "body": "no signature",
     }).encode()
 
@@ -82,17 +72,17 @@ async def test_tampered_body_is_rejected(client: AsyncClient):
     _, _token = caller_token()
     headers_a = bearer(_token)
     user_b_id, _ = caller_token()
-    conversation_id = await _create_conversation_via_api(client, headers_a, [user_b_id])
+    chat_id = await open_chat_id(client, headers_a, user_b_id)
 
     original_body = json.dumps({
         "company_id": str(DEFAULT_COMPANY_ID),
-        "conversation_id": conversation_id,
+        "chat_id": chat_id,
         "body": "original",
     }).encode()
     signature = _sign(original_body)
     tampered_body = json.dumps({
         "company_id": str(DEFAULT_COMPANY_ID),
-        "conversation_id": conversation_id,
+        "chat_id": chat_id,
         "body": "tampered",
     }).encode()
 
@@ -105,12 +95,12 @@ async def test_tampered_body_is_rejected(client: AsyncClient):
     assert response.status_code == 401
 
 
-async def test_unknown_conversation_id_is_rejected(client: AsyncClient):
-    unknown_conversation_id = str(uuid.uuid4())
+async def test_unknown_chat_id_is_rejected(client: AsyncClient):
+    unknown_chat_id = str(uuid.uuid4())
     body = json.dumps(
         {
             "company_id": str(DEFAULT_COMPANY_ID),
-            "conversation_id": unknown_conversation_id,
+            "chat_id": unknown_chat_id,
             "body": "nobody's home",
         }
     ).encode()
@@ -128,14 +118,14 @@ async def test_webhook_message_delivered_live_to_connected_participant(client: A
     user_a_id, _token = caller_token()
     headers_a = bearer(_token)
     user_b_id, _ = caller_token()
-    conversation_id = await _create_conversation_via_api(client, headers_a, [user_b_id])
+    chat_id = await open_chat_id(client, headers_a, user_b_id)
 
     token_a = headers_a["Authorization"].removeprefix("Bearer ")
 
     body = json.dumps(
         {
             "company_id": str(DEFAULT_COMPANY_ID),
-            "conversation_id": conversation_id,
+            "chat_id": chat_id,
             "body": "shipped",
             "source_label": "Shipping Bot",
         }
@@ -145,7 +135,7 @@ async def test_webhook_message_delivered_live_to_connected_participant(client: A
         transport=ASGIWebSocketTransport(app=app), base_url="http://test"
     ) as ws_client:
         async with aconnect_ws(
-            f"/websocket/conversations/{conversation_id}?token={token_a}",
+            f"/websocket/chats/{chat_id}?token={token_a}",
             client=ws_client,
         ) as ws:
             response = await client.post(
@@ -158,28 +148,28 @@ async def test_webhook_message_delivered_live_to_connected_participant(client: A
             received = await ws.receive_json(timeout=5)
 
     assert received["body"] == "shipped"
-    assert received["conversation_id"] == conversation_id
+    assert received["chat_id"] == chat_id
     assert received["sender_id"] is None
     assert received["sender_type"] == "external"
     assert received["source_label"] == "Shipping Bot"
 
 
-async def test_webhook_message_not_delivered_to_other_conversation(client: AsyncClient):
+async def test_webhook_message_not_delivered_to_other_chat(client: AsyncClient):
     user_a_id, _token = caller_token()
     headers_a = bearer(_token)
     user_b_id, _ = caller_token()
-    target_conversation_id = await _create_conversation_via_api(client, headers_a, [user_b_id])
+    target_chat_id = await open_chat_id(client, headers_a, user_b_id)
 
     user_c_id, _token = caller_token()
     headers_c = bearer(_token)
     user_d_id, _ = caller_token()
-    other_conversation_id = await _create_conversation_via_api(client, headers_c, [user_d_id])
+    other_chat_id = await open_chat_id(client, headers_c, user_d_id)
 
     token_c = headers_c["Authorization"].removeprefix("Bearer ")
 
     body = json.dumps({
         "company_id": str(DEFAULT_COMPANY_ID),
-        "conversation_id": target_conversation_id,
+        "chat_id": target_chat_id,
         "body": "shipped",
     }).encode()
 
@@ -187,7 +177,7 @@ async def test_webhook_message_not_delivered_to_other_conversation(client: Async
         transport=ASGIWebSocketTransport(app=app), base_url="http://test"
     ) as ws_client:
         async with aconnect_ws(
-            f"/websocket/conversations/{other_conversation_id}?token={token_c}",
+            f"/websocket/chats/{other_chat_id}?token={token_c}",
             client=ws_client,
         ) as ws:
             response = await client.post(
@@ -197,12 +187,12 @@ async def test_webhook_message_not_delivered_to_other_conversation(client: Async
             )
             assert response.status_code == 201
 
-            # confirm the other conversation's own traffic still works, proving the
+            # confirm the other chat's own traffic still works, proving the
             # earlier lack of a message isn't just a dead/slow socket
             own_body = json.dumps(
                 {
                     "company_id": str(DEFAULT_COMPANY_ID),
-                    "conversation_id": other_conversation_id,
+                    "chat_id": other_chat_id,
                     "body": "own message",
                 }
             ).encode()
@@ -216,18 +206,18 @@ async def test_webhook_message_not_delivered_to_other_conversation(client: Async
             received = await ws.receive_json(timeout=5)
 
     assert received["body"] == "own message"
-    assert received["conversation_id"] == other_conversation_id
+    assert received["chat_id"] == other_chat_id
 
 
 async def test_invalid_signature_is_rejected(client: AsyncClient):
     _, _token = caller_token()
     headers_a = bearer(_token)
     user_b_id, _ = caller_token()
-    conversation_id = await _create_conversation_via_api(client, headers_a, [user_b_id])
+    chat_id = await open_chat_id(client, headers_a, user_b_id)
 
     body = json.dumps({
         "company_id": str(DEFAULT_COMPANY_ID),
-        "conversation_id": conversation_id,
+        "chat_id": chat_id,
         "body": "bad signature",
     }).encode()
 

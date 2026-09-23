@@ -50,13 +50,13 @@ describe('WebhookTestPage', () => {
     expect(
       screen.getByText('essa é apenas uma pagina para teste do WebHook'),
     ).toBeInTheDocument()
-    expect(screen.getAllByText('Voltar às Conversas').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Voltar aos Chats').length).toBeGreaterThan(0)
   })
 
   it('signs and submits the form, showing the created message on success', async () => {
     vi.mocked(sendWebhookMessage).mockResolvedValue({
       id: 'msg-1',
-      conversation_id: 'conv-1',
+      chat_id: 'chat-1',
       sender_id: null,
       sender_type: 'external',
       source_label: 'crm',
@@ -67,7 +67,7 @@ describe('WebhookTestPage', () => {
     renderPage()
     await screen.findByText('Usuário Conectado: ana')
 
-    await user.type(screen.getByLabelText('Conversation ID'), 'conv-1')
+    await user.type(screen.getByLabelText('Chat ID'), 'chat-1')
     await user.type(screen.getByLabelText('Mensagem'), 'oi')
     await user.type(screen.getByLabelText('Nome do remetente'), 'crm')
     await user.click(screen.getByRole('button', { name: 'Enviar WebHook de Teste' }))
@@ -78,7 +78,7 @@ describe('WebhookTestPage', () => {
     expect(alert).toHaveTextContent('external')
     expect(alert).toHaveTextContent('crm')
     expect(sendWebhookMessage).toHaveBeenCalledWith(
-      JSON.stringify({ conversation_id: 'conv-1', body: 'oi', source_label: 'crm' }),
+      JSON.stringify({ chat_id: 'chat-1', body: 'oi', source_label: 'crm' }),
       expect.any(String),
     )
   })
@@ -89,7 +89,7 @@ describe('WebhookTestPage', () => {
     renderPage()
     await screen.findByText('Usuário Conectado: ana')
 
-    await user.type(screen.getByLabelText('Conversation ID'), 'conv-1')
+    await user.type(screen.getByLabelText('Chat ID'), 'chat-1')
     await user.type(screen.getByLabelText('Mensagem'), 'oi')
     await user.click(screen.getByRole('button', { name: 'Enviar WebHook de Teste' }))
 
@@ -105,7 +105,7 @@ describe('WebhookTestPage', () => {
     renderPage()
     await screen.findByText('Usuário Conectado: ana')
 
-    await user.type(screen.getByLabelText('Conversation ID'), 'conv-1')
+    await user.type(screen.getByLabelText('Chat ID'), 'chat-1')
     await user.type(screen.getByLabelText('Mensagem'), 'oi')
     await user.click(screen.getByRole('button', { name: 'Enviar WebHook de Teste' }))
 
