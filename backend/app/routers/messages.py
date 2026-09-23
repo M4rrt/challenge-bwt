@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.chat_token import Caller
-from app.core.security import get_current_caller
+from app.core.company_scope import CompanyScope
+from app.core.security import get_company_scope, get_current_caller
 from app.db import get_db
 from app.models.message import Message
 from app.schemas.message import MessageCreate, MessageRead
@@ -30,10 +31,11 @@ async def send(
     conversation_id: uuid.UUID,
     data: MessageCreate,
     caller: Caller = Depends(get_current_caller),
+    scope: CompanyScope = Depends(get_company_scope),
     db: AsyncSession = Depends(get_db),
 ) -> MessageRead:
     try:
-        message = await send_message(db, caller, conversation_id, data)
+        message = await send_message(db, scope, caller, conversation_id, data)
     except ConversationNotFoundError:
         raise HTTPException(status_code=404, detail="conversation not found")
     return _to_read(message)
@@ -43,10 +45,11 @@ async def send(
 async def list_all(
     conversation_id: uuid.UUID,
     caller: Caller = Depends(get_current_caller),
+    scope: CompanyScope = Depends(get_company_scope),
     db: AsyncSession = Depends(get_db),
 ) -> list[MessageRead]:
     try:
-        messages = await list_messages(db, caller, conversation_id)
+        messages = await list_messages(db, scope, caller, conversation_id)
     except ConversationNotFoundError:
         raise HTTPException(status_code=404, detail="conversation not found")
     return [_to_read(m) for m in messages]

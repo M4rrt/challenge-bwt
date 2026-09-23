@@ -16,11 +16,22 @@ from jose import jwt
 from app.core.chat_token import CHAT_CLAIM_NAMESPACE, Caller
 from app.core.config import settings
 
+# Callers share a Company unless a test names another one, so that crossing the
+# boundary is always something a test did on purpose.
+DEFAULT_COMPANY_ID = uuid.UUID("11111111-1111-1111-1111-111111111111")
+
+
+class _Omitted:
+    """A claim the monolith did not issue at all, as opposed to one left at its default."""
+
+
+OMITTED = _Omitted()
+
 
 def mint_chat_token(
     *,
     user_id: uuid.UUID | str | None = None,
-    company_id: uuid.UUID | str | None = None,
+    company_id: uuid.UUID | str | _Omitted | None = None,
     user_kind: str = "staff",
     scopes: list[str] | None = None,
     display_name: str = "Ana Souza",
@@ -29,15 +40,18 @@ def mint_chat_token(
     expires_in: timedelta | None = timedelta(minutes=15),
     secret: str | None = None,
 ) -> str:
+    chat_claims: dict[str, object] = {
+        "user_kind": user_kind,
+        "scopes": scopes if scopes is not None else ["chat:read", "chat:write"],
+        "display_name": display_name,
+        "avatar_url": avatar_url,
+    }
+    if not isinstance(company_id, _Omitted):
+        chat_claims["company_id"] = str(company_id or DEFAULT_COMPANY_ID)
+
     claims: dict[str, object] = {
         "sub": str(user_id or uuid.uuid4()),
-        CHAT_CLAIM_NAMESPACE: {
-            "company_id": str(company_id or uuid.uuid4()),
-            "user_kind": user_kind,
-            "scopes": scopes if scopes is not None else ["chat:read", "chat:write"],
-            "display_name": display_name,
-            "avatar_url": avatar_url,
-        },
+        CHAT_CLAIM_NAMESPACE: chat_claims,
     }
     if audience is not None:
         claims["aud"] = audience
@@ -68,7 +82,7 @@ def make_caller(
 ) -> Caller:
     return Caller(
         id=user_id or uuid.uuid4(),
-        company_id=company_id or uuid.uuid4(),
+        company_id=company_id or DEFAULT_COMPANY_ID,
         user_kind=user_kind,
         scopes=scopes,
         display_name=display_name,

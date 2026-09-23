@@ -9,7 +9,7 @@ from httpx_ws import aconnect_ws
 
 from app.core.config import settings
 from app.main import app
-from tests.chat_tokens import bearer, caller_token
+from tests.chat_tokens import DEFAULT_COMPANY_ID, bearer, caller_token
 
 
 def _sign(body: bytes) -> str:
@@ -34,7 +34,12 @@ async def test_valid_signature_persists_external_message(client: AsyncClient):
     conversation_id = await _create_conversation_via_api(client, headers_a, [user_b_id])
 
     body = json.dumps(
-        {"conversation_id": conversation_id, "body": "shipped", "source_label": "Shipping Bot"}
+        {
+            "company_id": str(DEFAULT_COMPANY_ID),
+            "conversation_id": conversation_id,
+            "body": "shipped",
+            "source_label": "Shipping Bot",
+        }
     ).encode()
 
     response = await client.post(
@@ -58,7 +63,11 @@ async def test_missing_signature_is_rejected(client: AsyncClient):
     user_b_id, _ = caller_token()
     conversation_id = await _create_conversation_via_api(client, headers_a, [user_b_id])
 
-    body = json.dumps({"conversation_id": conversation_id, "body": "no signature"}).encode()
+    body = json.dumps({
+        "company_id": str(DEFAULT_COMPANY_ID),
+        "conversation_id": conversation_id,
+        "body": "no signature",
+    }).encode()
 
     response = await client.post(
         "/webhook/messages",
@@ -75,9 +84,17 @@ async def test_tampered_body_is_rejected(client: AsyncClient):
     user_b_id, _ = caller_token()
     conversation_id = await _create_conversation_via_api(client, headers_a, [user_b_id])
 
-    original_body = json.dumps({"conversation_id": conversation_id, "body": "original"}).encode()
+    original_body = json.dumps({
+        "company_id": str(DEFAULT_COMPANY_ID),
+        "conversation_id": conversation_id,
+        "body": "original",
+    }).encode()
     signature = _sign(original_body)
-    tampered_body = json.dumps({"conversation_id": conversation_id, "body": "tampered"}).encode()
+    tampered_body = json.dumps({
+        "company_id": str(DEFAULT_COMPANY_ID),
+        "conversation_id": conversation_id,
+        "body": "tampered",
+    }).encode()
 
     response = await client.post(
         "/webhook/messages",
@@ -91,7 +108,11 @@ async def test_tampered_body_is_rejected(client: AsyncClient):
 async def test_unknown_conversation_id_is_rejected(client: AsyncClient):
     unknown_conversation_id = str(uuid.uuid4())
     body = json.dumps(
-        {"conversation_id": unknown_conversation_id, "body": "nobody's home"}
+        {
+            "company_id": str(DEFAULT_COMPANY_ID),
+            "conversation_id": unknown_conversation_id,
+            "body": "nobody's home",
+        }
     ).encode()
 
     response = await client.post(
@@ -112,7 +133,12 @@ async def test_webhook_message_delivered_live_to_connected_participant(client: A
     token_a = headers_a["Authorization"].removeprefix("Bearer ")
 
     body = json.dumps(
-        {"conversation_id": conversation_id, "body": "shipped", "source_label": "Shipping Bot"}
+        {
+            "company_id": str(DEFAULT_COMPANY_ID),
+            "conversation_id": conversation_id,
+            "body": "shipped",
+            "source_label": "Shipping Bot",
+        }
     ).encode()
 
     async with AsyncClient(
@@ -151,7 +177,11 @@ async def test_webhook_message_not_delivered_to_other_conversation(client: Async
 
     token_c = headers_c["Authorization"].removeprefix("Bearer ")
 
-    body = json.dumps({"conversation_id": target_conversation_id, "body": "shipped"}).encode()
+    body = json.dumps({
+        "company_id": str(DEFAULT_COMPANY_ID),
+        "conversation_id": target_conversation_id,
+        "body": "shipped",
+    }).encode()
 
     async with AsyncClient(
         transport=ASGIWebSocketTransport(app=app), base_url="http://test"
@@ -170,7 +200,11 @@ async def test_webhook_message_not_delivered_to_other_conversation(client: Async
             # confirm the other conversation's own traffic still works, proving the
             # earlier lack of a message isn't just a dead/slow socket
             own_body = json.dumps(
-                {"conversation_id": other_conversation_id, "body": "own message"}
+                {
+                    "company_id": str(DEFAULT_COMPANY_ID),
+                    "conversation_id": other_conversation_id,
+                    "body": "own message",
+                }
             ).encode()
             own_response = await client.post(
                 "/webhook/messages",
@@ -191,7 +225,11 @@ async def test_invalid_signature_is_rejected(client: AsyncClient):
     user_b_id, _ = caller_token()
     conversation_id = await _create_conversation_via_api(client, headers_a, [user_b_id])
 
-    body = json.dumps({"conversation_id": conversation_id, "body": "bad signature"}).encode()
+    body = json.dumps({
+        "company_id": str(DEFAULT_COMPANY_ID),
+        "conversation_id": conversation_id,
+        "body": "bad signature",
+    }).encode()
 
     response = await client.post(
         "/webhook/messages",

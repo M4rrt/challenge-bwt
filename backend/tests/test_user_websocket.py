@@ -7,7 +7,7 @@ import pytest
 
 from app.main import app
 from app.services.realtime import publish_to_user
-from tests.chat_tokens import caller_token
+from tests.chat_tokens import DEFAULT_COMPANY_ID, caller_token
 
 
 async def test_invalid_token_rejects_user_websocket_connection(client: AsyncClient):
@@ -96,7 +96,7 @@ async def test_connected_user_receives_message_published_to_their_channel(
             f"/websocket/users/me?token={token}",
             client=ws_client,
         ) as ws:
-            await publish_to_user(uuid.UUID(user_id), '{"hello": "world"}')
+            await publish_to_user(DEFAULT_COMPANY_ID, uuid.UUID(user_id), '{"hello": "world"}')
             received = await ws.receive_text(timeout=5)
 
     assert received == '{"hello": "world"}'

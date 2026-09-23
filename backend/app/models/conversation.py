@@ -3,10 +3,11 @@ import uuid
 from sqlalchemy import ForeignKey, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.company_scope import CompanyScoped
 from app.db import Base
 
 
-class Conversation(Base):
+class Conversation(Base, CompanyScoped):
     __tablename__ = "conversations"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -19,7 +20,7 @@ class Conversation(Base):
     )
 
 
-class ConversationParticipant(Base):
+class ConversationParticipant(Base, CompanyScoped):
     __tablename__ = "conversation_participants"
     __table_args__ = (UniqueConstraint("conversation_id", "user_id"),)
 
