@@ -1,5 +1,6 @@
 from app.models.chat import Chat, ChatType, Participant, ParticipantRole
 from app.models.message import Message, MessageVisibility
+from app.models.outbox import OutboxEvent
 
 __all__ = [
     "Chat",
@@ -8,4 +9,5 @@ __all__ = [
     "ParticipantRole",
     "Message",
     "MessageVisibility",
+    "OutboxEvent",
 ]

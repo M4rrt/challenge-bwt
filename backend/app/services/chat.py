@@ -13,7 +13,8 @@ from app.core.message_visibility import readable_visibilities
 from app.models.chat import STILL_IN_THE_CHAT, Chat, ChatType, Participant, ParticipantRole
 from app.models.message import Message, MessageVisibility
 from app.schemas.chat import ChatCreate, ChatRead
-from app.services.realtime import publish_to_user
+from app.services.outbox import enqueue
+from app.services.realtime import address_for_user
 
 
 _UNIX_EPOCH = datetime.fromtimestamp(0, tz=timezone.utc)
@@ -121,10 +122,16 @@ async def create_chat(
         Participant(company_id=scope.company_id, user_id=user_id, role=role)
         for user_id, role in roles.items()
     ]
+    # The same shape as `_persist_and_announce`: flush for the identifiers,
+    # enqueue, and commit once. Enqueueing after the commit would write rows
+    # into a transaction nothing ever commits — `get_db` closes the session and
+    # a session closed with work open rolls it back — so the Chat would exist
+    # and nobody would be told it had been created.
     db.add(chat)
-    await db.commit()
+    await db.flush()
     await db.refresh(chat, attribute_names=["participants"])
-    await notify_participants(db, scope, chat.id)
+    await enqueue_chat_summaries(db, scope, chat.id)
+    await db.commit()
     return chat
 
 
@@ -213,9 +220,20 @@ async def get_last_message_at_by_chat(
     return dict(result.all())
 
 
-async def notify_participants(
+async def enqueue_chat_summaries(
     db: AsyncSession, scope: CompanyScope, chat_id: uuid.UUID
 ) -> None:
+    """Tell each Participant their chat list moved — with their own view of it.
+
+    One payload per role rather than one per Chat. `last_message_at` is drawn
+    from what that reader may actually read, so a Staff-only Message no longer
+    stirs the end client's list: before this, every Participant got the same
+    summary and the end client watched the Chat float to the top for a message
+    they would never be shown.
+
+    Grouped by role because the summary only differs by what the role may see,
+    so a Chat with twenty staff in it costs one aggregate query, not twenty.
+    """
     chat = await db.scalar(
         scope.select(Chat)
         .where(Chat.id == chat_id)
@@ -224,15 +242,23 @@ async def notify_participants(
     if chat is None:
         return
 
-    # Every current Participant gets the same summary, Staff-only Message
-    # included, because this is the live path and ticket 07 is what gives the
-    # Company's staff an address of their own. Until it lands, an end client's
-    # open chat list can twitch for a message their next `GET /chats` will not
-    # show them — the transport gap ticket 07 exists to close.
-    last_message_at = await get_last_message_at_by_chat(
-        db, scope, {chat_id: list(MessageVisibility)}
-    )
-    payload = ChatRead.of(chat, last_message_at.get(chat_id)).model_dump_json()
-
+    participants_by_role: dict[ParticipantRole, list[Participant]] = defaultdict(list)
     for participant in chat.current_participants:
-        await publish_to_user(scope.company_id, participant.user_id, payload)
+        participants_by_role[participant.role].append(participant)
+
+    for role, participants in participants_by_role.items():
+        last_message_at = await get_last_message_at_by_chat(
+            db,
+            scope,
+            {
+                chat_id: readable_visibilities(
+                    reader_kind=role,
+                    reader_company_id=chat.company_id,
+                    chat_company_id=chat.company_id,
+                    chat_type=chat.type,
+                )
+            },
+        )
+        payload = ChatRead.of(chat, last_message_at.get(chat_id)).model_dump_json()
+        for participant in participants:
+            enqueue(db, address_for_user(chat.company_id, participant.user_id), payload)
