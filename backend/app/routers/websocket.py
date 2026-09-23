@@ -3,7 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import decode_user_from_token
+from app.core.chat_token import verify_chat_token
 from app.db import get_db
 from app.services.message import ConversationNotFoundError, assert_participant
 from app.services.realtime import connection_manager
@@ -18,13 +18,13 @@ async def conversation_socket(
     token: str,
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    user = await decode_user_from_token(token, db)
-    if user is None:
+    caller = verify_chat_token(token)
+    if caller is None:
         await websocket.close(code=1008)
         return
 
     try:
-        await assert_participant(db, conversation_id, user.id)
+        await assert_participant(db, conversation_id, caller.id)
     except ConversationNotFoundError:
         await websocket.close(code=1008)
         return
@@ -45,22 +45,18 @@ async def conversation_socket(
 
 
 @router.websocket("/users/me")
-async def user_socket(
-    websocket: WebSocket,
-    token: str,
-    db: AsyncSession = Depends(get_db),
-) -> None:
-    user = await decode_user_from_token(token, db)
-    if user is None:
+async def user_socket(websocket: WebSocket, token: str) -> None:
+    caller = verify_chat_token(token)
+    if caller is None:
         await websocket.close(code=1008)
         return
 
     await websocket.accept()
-    connection_manager.connect_user(user.id, websocket)
+    connection_manager.connect_user(caller.id, websocket)
     try:
         while True:
             await websocket.receive_json()
     except WebSocketDisconnect:
         pass
     finally:
-        connection_manager.disconnect_user(user.id, websocket)
+        connection_manager.disconnect_user(caller.id, websocket)

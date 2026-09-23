@@ -7,22 +7,7 @@ import pytest
 
 from app.main import app
 from app.services.realtime import publish_to_user
-
-
-async def _register_and_login(client: AsyncClient, email: str) -> tuple[str, str]:
-    username = email.split("@")[0]
-    register_response = await client.post(
-        "/auth/register",
-        json={"email": email, "username": username, "password": "Senha-Forte-123"},
-    )
-    user_id = register_response.json()["id"]
-
-    login_response = await client.post(
-        "/auth/login", json={"email": email, "password": "Senha-Forte-123"}
-    )
-    token = login_response.json()["access_token"]
-
-    return user_id, token
+from tests.chat_tokens import caller_token
 
 
 async def test_invalid_token_rejects_user_websocket_connection(client: AsyncClient):
@@ -42,8 +27,8 @@ async def test_invalid_token_rejects_user_websocket_connection(client: AsyncClie
 async def test_participant_is_notified_over_user_channel_when_conversation_is_created(
     client: AsyncClient,
 ):
-    user_a_id, token_a = await _register_and_login(client, "user-ws-b@example.com")
-    user_b_id, token_b = await _register_and_login(client, "user-ws-c@example.com")
+    user_a_id, token_a = caller_token()
+    user_b_id, token_b = caller_token()
 
     async with AsyncClient(
         transport=ASGIWebSocketTransport(app=app), base_url="http://test"
@@ -68,8 +53,8 @@ async def test_participant_is_notified_over_user_channel_when_conversation_is_cr
 async def test_participant_is_notified_over_user_channel_when_message_arrives(
     client: AsyncClient,
 ):
-    user_a_id, token_a = await _register_and_login(client, "user-ws-d@example.com")
-    user_b_id, token_b = await _register_and_login(client, "user-ws-e@example.com")
+    user_a_id, token_a = caller_token()
+    user_b_id, token_b = caller_token()
     headers_a = {"Authorization": f"Bearer {token_a}"}
 
     create_response = await client.post(
@@ -102,7 +87,7 @@ async def test_participant_is_notified_over_user_channel_when_message_arrives(
 async def test_connected_user_receives_message_published_to_their_channel(
     client: AsyncClient,
 ):
-    user_id, token = await _register_and_login(client, "user-ws-a@example.com")
+    user_id, token = caller_token()
 
     async with AsyncClient(
         transport=ASGIWebSocketTransport(app=app), base_url="http://test"

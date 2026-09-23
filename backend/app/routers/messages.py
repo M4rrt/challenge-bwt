@@ -3,10 +3,10 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import get_current_user
+from app.core.chat_token import Caller
+from app.core.security import get_current_caller
 from app.db import get_db
 from app.models.message import Message
-from app.models.user import User
 from app.schemas.message import MessageCreate, MessageRead
 from app.services.message import ConversationNotFoundError, list_messages, send_message
 
@@ -29,11 +29,11 @@ def _to_read(message: Message) -> MessageRead:
 async def send(
     conversation_id: uuid.UUID,
     data: MessageCreate,
-    current_user: User = Depends(get_current_user),
+    caller: Caller = Depends(get_current_caller),
     db: AsyncSession = Depends(get_db),
 ) -> MessageRead:
     try:
-        message = await send_message(db, current_user, conversation_id, data)
+        message = await send_message(db, caller, conversation_id, data)
     except ConversationNotFoundError:
         raise HTTPException(status_code=404, detail="conversation not found")
     return _to_read(message)
@@ -42,11 +42,11 @@ async def send(
 @router.get("", response_model=list[MessageRead])
 async def list_all(
     conversation_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    caller: Caller = Depends(get_current_caller),
     db: AsyncSession = Depends(get_db),
 ) -> list[MessageRead]:
     try:
-        messages = await list_messages(db, current_user, conversation_id)
+        messages = await list_messages(db, caller, conversation_id)
     except ConversationNotFoundError:
         raise HTTPException(status_code=404, detail="conversation not found")
     return [_to_read(m) for m in messages]

@@ -9,26 +9,11 @@ from httpx_ws import aconnect_ws
 
 from app.core.config import settings
 from app.main import app
+from tests.chat_tokens import bearer, caller_token
 
 
 def _sign(body: bytes) -> str:
     return hmac.new(settings.webhook_hmac_secret.encode(), body, hashlib.sha256).hexdigest()
-
-
-async def _register_and_login(client: AsyncClient, email: str) -> tuple[str, dict[str, str]]:
-    username = email.split("@")[0]
-    register_response = await client.post(
-        "/auth/register",
-        json={"email": email, "username": username, "password": "Senha-Forte-123"},
-    )
-    user_id = register_response.json()["id"]
-
-    login_response = await client.post(
-        "/auth/login", json={"email": email, "password": "Senha-Forte-123"}
-    )
-    token = login_response.json()["access_token"]
-
-    return user_id, {"Authorization": f"Bearer {token}"}
 
 
 async def _create_conversation_via_api(
@@ -43,8 +28,9 @@ async def _create_conversation_via_api(
 
 
 async def test_valid_signature_persists_external_message(client: AsyncClient):
-    _, headers_a = await _register_and_login(client, "wh-a@example.com")
-    user_b_id, _ = await _register_and_login(client, "wh-b@example.com")
+    _, _token = caller_token()
+    headers_a = bearer(_token)
+    user_b_id, _ = caller_token()
     conversation_id = await _create_conversation_via_api(client, headers_a, [user_b_id])
 
     body = json.dumps(
@@ -67,8 +53,9 @@ async def test_valid_signature_persists_external_message(client: AsyncClient):
 
 
 async def test_missing_signature_is_rejected(client: AsyncClient):
-    _, headers_a = await _register_and_login(client, "wh-c@example.com")
-    user_b_id, _ = await _register_and_login(client, "wh-d@example.com")
+    _, _token = caller_token()
+    headers_a = bearer(_token)
+    user_b_id, _ = caller_token()
     conversation_id = await _create_conversation_via_api(client, headers_a, [user_b_id])
 
     body = json.dumps({"conversation_id": conversation_id, "body": "no signature"}).encode()
@@ -83,8 +70,9 @@ async def test_missing_signature_is_rejected(client: AsyncClient):
 
 
 async def test_tampered_body_is_rejected(client: AsyncClient):
-    _, headers_a = await _register_and_login(client, "wh-g@example.com")
-    user_b_id, _ = await _register_and_login(client, "wh-h@example.com")
+    _, _token = caller_token()
+    headers_a = bearer(_token)
+    user_b_id, _ = caller_token()
     conversation_id = await _create_conversation_via_api(client, headers_a, [user_b_id])
 
     original_body = json.dumps({"conversation_id": conversation_id, "body": "original"}).encode()
@@ -116,8 +104,9 @@ async def test_unknown_conversation_id_is_rejected(client: AsyncClient):
 
 
 async def test_webhook_message_delivered_live_to_connected_participant(client: AsyncClient):
-    user_a_id, headers_a = await _register_and_login(client, "wh-i@example.com")
-    user_b_id, _ = await _register_and_login(client, "wh-j@example.com")
+    user_a_id, _token = caller_token()
+    headers_a = bearer(_token)
+    user_b_id, _ = caller_token()
     conversation_id = await _create_conversation_via_api(client, headers_a, [user_b_id])
 
     token_a = headers_a["Authorization"].removeprefix("Bearer ")
@@ -150,12 +139,14 @@ async def test_webhook_message_delivered_live_to_connected_participant(client: A
 
 
 async def test_webhook_message_not_delivered_to_other_conversation(client: AsyncClient):
-    user_a_id, headers_a = await _register_and_login(client, "wh-k@example.com")
-    user_b_id, _ = await _register_and_login(client, "wh-l@example.com")
+    user_a_id, _token = caller_token()
+    headers_a = bearer(_token)
+    user_b_id, _ = caller_token()
     target_conversation_id = await _create_conversation_via_api(client, headers_a, [user_b_id])
 
-    user_c_id, headers_c = await _register_and_login(client, "wh-m@example.com")
-    user_d_id, _ = await _register_and_login(client, "wh-n@example.com")
+    user_c_id, _token = caller_token()
+    headers_c = bearer(_token)
+    user_d_id, _ = caller_token()
     other_conversation_id = await _create_conversation_via_api(client, headers_c, [user_d_id])
 
     token_c = headers_c["Authorization"].removeprefix("Bearer ")
@@ -195,8 +186,9 @@ async def test_webhook_message_not_delivered_to_other_conversation(client: Async
 
 
 async def test_invalid_signature_is_rejected(client: AsyncClient):
-    _, headers_a = await _register_and_login(client, "wh-e@example.com")
-    user_b_id, _ = await _register_and_login(client, "wh-f@example.com")
+    _, _token = caller_token()
+    headers_a = bearer(_token)
+    user_b_id, _ = caller_token()
     conversation_id = await _create_conversation_via_api(client, headers_a, [user_b_id])
 
     body = json.dumps({"conversation_id": conversation_id, "body": "bad signature"}).encode()

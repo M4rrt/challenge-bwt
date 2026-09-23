@@ -42,20 +42,28 @@ Lista completa de itens deferidos em [`docs/decisions.md`](docs/decisions.md#def
 - **Offline/unread tracking.** Hoje um participante desconectado busca o backlog via REST ao reconectar, sem read receipts ou contagem de não lidas — é a primeira coisa que eu adicionaria, por ser uma feature genuinamente separada (estado próprio, UI, casos de borda).
 - **Rodar sem Redis, single-instance.** O fan-out via Redis pub/sub ([ADR-0003](docs/adr/0003-redis-pubsub-for-horizontal-scaling.md)) foi construído agora, e não deferido, porque escalabilidade é critério avaliado — a alternativa mais simples (uma única instância do backend com um registro de conexões em memória, sem Redis) foi discutida e descartada por esse motivo. O design foi validado por leitura/revisão, mas nunca testado de fato com duas ou mais réplicas do backend rodando simultaneamente; com mais tempo, validaria esse comportamento fim a fim antes de confiar nele em produção.
 - **Extras não perseguidos:** bot de LLM no chat, microfrontends, WebSocket nativo via AWS API Gateway ([ADR-0001](docs/adr/0001-containerized-websocket-over-api-gateway.md)), filas (SQS/Kafka) para desacoplar o processamento, arquitetura de microsserviços, pipeline de CI/CD e observabilidade (logs estruturados, métricas, tracing). Auth (JWT) e Tests foram os extras priorizados no orçamento de 8-16h; os demais ficam para depois, nessa ordem de prioridade.
+- **BLOQUEADOR DE PRODUÇÃO — o chat token ainda é assinado em HS256.** O serviço
+  verifica o token com um segredo compartilhado, ou seja, **ele guarda material
+  capaz de emitir um token que ele próprio aceitaria**. É exatamente a
+  propriedade que o [ADR-0009](docs/adr/0009-chat-owns-token-in-rs256.md) existe
+  para eliminar: em RS256 o serviço guarda só a chave pública e não consegue
+  assinar nada. Enquanto isso não mudar, comprometer este serviço é comprometer
+  toda identidade do chat. O ticket 01 fechou o *contrato de claims* (que era o
+  que bloqueava o resto da spec) e deixou a assinatura de propósito; a troca é o
+  ticket 19, e **tem que entrar antes de qualquer tráfego de produção**.
 - **Gaps de segurança/robustez conhecidos:**
   - Sem proteção contra replay na assinatura do webhook.
   - Sem checagem de que o `conversation_id` do webhook pertence a um participante — o segredo HMAC é a única fronteira de confiança.
   - Sem forma segura de um sistema externo descobrir a qual conversa postar — hoje precisa saber o UUID de antemão.
   - Sem tiebreaker de ordenação de mensagens além de `created_at`.
-  - Refresh token sem rotação no uso — fica válido até expirar ou logout explícito.
-  - Logout não fecha WebSockets já abertos com o token antigo — token JWT é stateless e não tem revogação server-side.
-  - Token de acesso trafega como query param (`?token=`) no handshake WebSocket, não como header — tende a ficar gravado em logs de acesso de proxies/ALB e em histórico do navegador. Não documentado como trade-off em nenhum ADR; a alternativa seria conectar sem token e autenticar pela primeira mensagem do socket.
+  - WebSockets já abertos não revalidam o token: a conexão é autenticada uma vez, antes do `accept()`, e segue viva até cair. Com o token de quinze minutos como mecanismo de revogação ([ADR-0011](docs/adr/0011-revocation-at-the-next-token.md)), isso vira a renovação em banda e os três close codes do ticket 11.
+  - O chat token trafega como query param (`?token=`) no handshake WebSocket, não como header — tende a ficar gravado em logs de acesso de proxies/ALB e em histórico do navegador. Não documentado como trade-off em nenhum ADR; a alternativa seria conectar sem token e autenticar pela primeira mensagem do socket.
 - **Ordem de participantes não é uma garantia formal.** A resposta de conversas retorna participantes ordenados por `user_id`, mas isso hoje é efeito colateral do plano de execução do Postgres sobre o índice único composto de `conversation_participants` (confirmado ao investigar o RED de um teste no ticket 23), não uma garantia de SQL/SQLAlchemy — um `ORDER BY` explícito seria o fix correto antes de depender disso.
 - **Débito de performance e resiliência no backend, ainda não priorizado:**
   - Sem índice em `messages.conversation_id` — `list_messages` e a busca da última mensagem por conversa fazem table scan à medida que o histórico cresce.
   - O índice único de `conversation_participants` (`conversation_id, user_id`) favorece a checagem de membership, não `list_conversations` — que roda a cada carregamento da sidebar e filtra só por `user_id`.
-  - Sem rate limiting em `/auth/login`, `/auth/register` e `/webhook/messages`.
-  - Sem paginação em nenhuma listagem (`GET /conversations`, `GET /conversations/{id}/messages`, `GET /users`) — todas devolvem o conjunto inteiro.
+  - Sem rate limiting em `/webhook/messages`.
+  - Sem paginação em nenhuma listagem (`GET /conversations`, `GET /conversations/{id}/messages`) — todas devolvem o conjunto inteiro.
   - O subscriber Redis (`run_subscriber`) não tem retry nem log se a conexão cair — a entrega em tempo real para silenciosamente até o processo reiniciar.
 - **Frontend sem camada de hooks de dados dedicada.** As query keys do TanStack Query são reescritas à mão em cada rota; centralizar isso e gerar o client TypeScript a partir do OpenAPI que o FastAPI já expõe eliminaria uma classe inteira de bugs de drift entre os schemas Pydantic e as interfaces TS mantidas manualmente em `frontend/src/lib/api.ts`.
 - **Gaps de infra conhecidos** (ver [`infra/README.md`](infra/README.md)): NAT Gateway não provisionado (custo sem uso real no desenho atual), e o ALB permanece HTTP-only mesmo com o frontend em TLS via CloudFront.
