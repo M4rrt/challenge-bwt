@@ -4,10 +4,11 @@ from datetime import datetime
 from sqlalchemy import DateTime, ForeignKey, String, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.company_scope import CompanyScoped
 from app.db import Base
 
 
-class Message(Base):
+class Message(Base, CompanyScoped):
     __tablename__ = "messages"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)

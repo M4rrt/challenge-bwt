@@ -25,7 +25,7 @@ flowchart LR
     Persist -->|INSERT| PG[("Postgres: messages")]
     Persist -->|"PUBLISH conversation:{id}"| ConvChannel[["Redis channel\nconversation:{id}"]]
     Persist --> Notify["notify_participants\n(one publish per participant)"]
-    Notify -->|"PUBLISH user:{id}"| UserChannel[["Redis channel\nuser:{id}"]]
+    Notify -->|"PUBLISH user:{company}:{id}"| UserChannel[["Redis channel\nuser:{company}:{id}"]]
 
     ConvChannel -->|"PSUBSCRIBE conversation:*"| Sub["run_subscriber\n(every backend instance)"]
     UserChannel -->|"PSUBSCRIBE user:*"| Sub
@@ -50,7 +50,7 @@ flowchart LR
   authenticated.
 - **Two independent channels, not one.** `conversation:{id}` carries the
   actual message body to clients with that conversation's WebSocket open.
-  `user:{id}` carries a lighter "this conversation changed" summary to every
+  `user:{company_id}:{user_id}` carries a lighter "this conversation changed" summary to every
   participant, independent of which conversation (if any) they currently have
   open — this is what keeps the conversation list's last-message preview live
   without every client subscribing to every conversation it's part of.

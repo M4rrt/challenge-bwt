@@ -9,6 +9,7 @@ class MessageCreate(BaseModel):
 
 
 class WebhookMessageCreate(BaseModel):
+    company_id: uuid.UUID
     conversation_id: uuid.UUID
     body: str
     source_label: str | None = None

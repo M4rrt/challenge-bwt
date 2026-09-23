@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.chat_token import Caller
-from app.core.security import get_current_caller
+from app.core.company_scope import CompanyScope
+from app.core.security import get_company_scope, get_current_caller
 from app.db import get_db
 from app.models.conversation import Conversation
 from app.schemas.conversation import ConversationCreate, ConversationRead
@@ -20,7 +21,9 @@ router = APIRouter(prefix="/conversations", tags=["conversations"])
 _UNIX_EPOCH = datetime.fromtimestamp(0, tz=timezone.utc)
 
 
-def _to_read(conversation: Conversation, last_message_at: datetime | None = None) -> ConversationRead:
+def _to_read(
+    conversation: Conversation, last_message_at: datetime | None = None
+) -> ConversationRead:
     return ConversationRead(
         id=conversation.id,
         name=conversation.name,
@@ -33,24 +36,26 @@ def _to_read(conversation: Conversation, last_message_at: datetime | None = None
 async def create(
     data: ConversationCreate,
     caller: Caller = Depends(get_current_caller),
+    scope: CompanyScope = Depends(get_company_scope),
     db: AsyncSession = Depends(get_db),
 ) -> ConversationRead:
     try:
-        conversation = await create_conversation(db, caller, data)
+        conversation = await create_conversation(db, scope, caller, data)
     except GroupNameRequiredError:
         raise HTTPException(status_code=422, detail="name is required for group conversations")
-    last_message_at_by_id = await get_last_message_at_by_conversation(db, [conversation.id])
+    last_message_at_by_id = await get_last_message_at_by_conversation(db, scope, [conversation.id])
     return _to_read(conversation, last_message_at_by_id.get(conversation.id))
 
 
 @router.get("", response_model=list[ConversationRead])
 async def list_all(
     caller: Caller = Depends(get_current_caller),
+    scope: CompanyScope = Depends(get_company_scope),
     db: AsyncSession = Depends(get_db),
 ) -> list[ConversationRead]:
-    conversations = await list_conversations(db, caller)
+    conversations = await list_conversations(db, scope, caller)
     last_message_at_by_id = await get_last_message_at_by_conversation(
-        db, [c.id for c in conversations]
+        db, scope, [c.id for c in conversations]
     )
     conversations.sort(key=lambda c: last_message_at_by_id.get(c.id, _UNIX_EPOCH), reverse=True)
     return [_to_read(c, last_message_at_by_id.get(c.id)) for c in conversations]

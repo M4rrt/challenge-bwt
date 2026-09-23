@@ -5,6 +5,7 @@ from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.chat_token import Caller, verify_chat_token
+from app.core.company_scope import CompanyScope
 from app.core.config import settings
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -24,3 +25,11 @@ async def get_current_caller(
     if caller is None:
         raise HTTPException(status_code=401, detail="invalid or missing token")
     return caller
+
+
+async def get_company_scope(caller: Caller = Depends(get_current_caller)) -> CompanyScope:
+    """The caller's Company, injected rather than derived at each call site.
+
+    A router that builds its own scope is a router that can build the wrong one.
+    """
+    return CompanyScope.of(caller)

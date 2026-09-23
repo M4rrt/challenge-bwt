@@ -16,7 +16,9 @@ USER_CHANNEL_PATTERN = "user:*"
 class ConnectionManager:
     def __init__(self) -> None:
         self._connections: dict[uuid.UUID, set[WebSocket]] = defaultdict(set)
-        self._user_connections: dict[uuid.UUID, set[WebSocket]] = defaultdict(set)
+        self._user_connections: dict[tuple[uuid.UUID, uuid.UUID], set[WebSocket]] = (
+            defaultdict(set)
+        )
 
     def connect(self, conversation_id: uuid.UUID, websocket: WebSocket) -> None:
         self._connections[conversation_id].add(websocket)
@@ -29,16 +31,23 @@ class ConnectionManager:
     def connections_for(self, conversation_id: uuid.UUID) -> set[WebSocket]:
         return self._connections.get(conversation_id, set())
 
-    def connect_user(self, user_id: uuid.UUID, websocket: WebSocket) -> None:
-        self._user_connections[user_id].add(websocket)
+    def connect_user(
+        self, company_id: uuid.UUID, user_id: uuid.UUID, websocket: WebSocket
+    ) -> None:
+        self._user_connections[(company_id, user_id)].add(websocket)
 
-    def disconnect_user(self, user_id: uuid.UUID, websocket: WebSocket) -> None:
-        self._user_connections[user_id].discard(websocket)
-        if not self._user_connections[user_id]:
-            del self._user_connections[user_id]
+    def disconnect_user(
+        self, company_id: uuid.UUID, user_id: uuid.UUID, websocket: WebSocket
+    ) -> None:
+        key = (company_id, user_id)
+        self._user_connections[key].discard(websocket)
+        if not self._user_connections[key]:
+            del self._user_connections[key]
 
-    def connections_for_user(self, user_id: uuid.UUID) -> set[WebSocket]:
-        return self._user_connections.get(user_id, set())
+    def connections_for_user(
+        self, company_id: uuid.UUID, user_id: uuid.UUID
+    ) -> set[WebSocket]:
+        return self._user_connections.get((company_id, user_id), set())
 
 
 connection_manager = ConnectionManager()
@@ -50,8 +59,14 @@ def _channel_for(conversation_id: uuid.UUID) -> str:
     return f"conversation:{conversation_id}"
 
 
-def _channel_for_user(user_id: uuid.UUID) -> str:
-    return f"user:{user_id}"
+def _channel_for_user(company_id: uuid.UUID, user_id: uuid.UUID) -> str:
+    """The chat-list channel carries the Company, because a user id does not identify a reader.
+
+    The same person can hold a token in two Companies. Keyed by user alone, a
+    Chat summary published for one Company would land on the socket they opened
+    with the other one's token.
+    """
+    return f"user:{company_id}:{user_id}"
 
 
 async def publish_message(message: Message) -> None:
@@ -67,8 +82,8 @@ async def publish_message(message: Message) -> None:
     await _publish_client.publish(_channel_for(message.conversation_id), payload)
 
 
-async def publish_to_user(user_id: uuid.UUID, payload: str) -> None:
-    await _publish_client.publish(_channel_for_user(user_id), payload)
+async def publish_to_user(company_id: uuid.UUID, user_id: uuid.UUID, payload: str) -> None:
+    await _publish_client.publish(_channel_for_user(company_id, user_id), payload)
 
 
 async def run_subscriber(subscribed: asyncio.Event | None = None) -> None:
@@ -89,8 +104,10 @@ async def run_subscriber(subscribed: asyncio.Event | None = None) -> None:
                 for websocket in connection_manager.connections_for(conversation_id):
                     await websocket.send_text(event["data"])
             elif channel.startswith("user:"):
-                user_id = uuid.UUID(channel.removeprefix("user:"))
-                for websocket in connection_manager.connections_for_user(user_id):
+                company_id, user_id = (
+                    uuid.UUID(part) for part in channel.removeprefix("user:").split(":")
+                )
+                for websocket in connection_manager.connections_for_user(company_id, user_id):
                     await websocket.send_text(event["data"])
     finally:
         await pubsub.punsubscribe(CONVERSATION_CHANNEL_PATTERN, USER_CHANNEL_PATTERN)

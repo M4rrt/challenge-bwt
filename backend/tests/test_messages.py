@@ -4,19 +4,33 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.chat_token import Caller
+from app.core.company_scope import CompanyScope
 from app.models.conversation import Conversation, ConversationParticipant
 from app.schemas.message import MessageCreate
 from app.services.message import ConversationNotFoundError, list_messages, send_message
-from tests.chat_tokens import bearer, caller_token, make_caller
+from tests.chat_tokens import DEFAULT_COMPANY_ID, bearer, caller_token, make_caller
 
 
 async def _create_conversation(db: AsyncSession, *user_ids: uuid.UUID) -> Conversation:
-    conversation = Conversation(name=None)
-    conversation.participants = [ConversationParticipant(user_id=uid) for uid in user_ids]
+    conversation = Conversation(company_id=DEFAULT_COMPANY_ID, name=None)
+    conversation.participants = [
+        ConversationParticipant(company_id=DEFAULT_COMPANY_ID, user_id=uid) for uid in user_ids
+    ]
     db.add(conversation)
     await db.commit()
     await db.refresh(conversation)
     return conversation
+
+
+async def _send(db: AsyncSession, caller: Caller, conversation_id: uuid.UUID, body: str):
+    """Call the service the way the router does — with the scope its dependency injects."""
+    scope = CompanyScope.of(caller)
+    return await send_message(db, scope, caller, conversation_id, MessageCreate(body=body))
+
+
+async def _list(db: AsyncSession, caller: Caller, conversation_id: uuid.UUID):
+    return await list_messages(db, CompanyScope.of(caller), caller, conversation_id)
 
 
 async def test_participant_can_send_message(db_session: AsyncSession):
@@ -24,7 +38,7 @@ async def test_participant_can_send_message(db_session: AsyncSession):
     other = make_caller()
     conversation = await _create_conversation(db_session, sender.id, other.id)
 
-    message = await send_message(db_session, sender, conversation.id, MessageCreate(body="oi"))
+    message = await _send(db_session, sender, conversation.id, "oi")
 
     assert message.body == "oi"
     assert message.conversation_id == conversation.id
@@ -39,7 +53,7 @@ async def test_non_participant_cannot_send_message(db_session: AsyncSession):
     conversation = await _create_conversation(db_session, sender.id, other.id)
 
     with pytest.raises(ConversationNotFoundError):
-        await send_message(db_session, outsider, conversation.id, MessageCreate(body="oi"))
+        await _send(db_session, outsider, conversation.id, "oi")
 
 
 async def test_participant_can_list_messages_in_order(db_session: AsyncSession):
@@ -47,10 +61,10 @@ async def test_participant_can_list_messages_in_order(db_session: AsyncSession):
     other = make_caller()
     conversation = await _create_conversation(db_session, sender.id, other.id)
 
-    first = await send_message(db_session, sender, conversation.id, MessageCreate(body="first"))
-    second = await send_message(db_session, other, conversation.id, MessageCreate(body="second"))
+    first = await _send(db_session, sender, conversation.id, "first")
+    second = await _send(db_session, other, conversation.id, "second")
 
-    messages = await list_messages(db_session, sender, conversation.id)
+    messages = await _list(db_session, sender, conversation.id)
 
     assert [m.id for m in messages] == [first.id, second.id]
 
@@ -60,10 +74,10 @@ async def test_non_participant_cannot_list_messages(db_session: AsyncSession):
     other = make_caller()
     outsider = make_caller()
     conversation = await _create_conversation(db_session, sender.id, other.id)
-    await send_message(db_session, sender, conversation.id, MessageCreate(body="oi"))
+    await _send(db_session, sender, conversation.id, "oi")
 
     with pytest.raises(ConversationNotFoundError):
-        await list_messages(db_session, outsider, conversation.id)
+        await _list(db_session, outsider, conversation.id)
 
 
 async def _create_conversation_via_api(
