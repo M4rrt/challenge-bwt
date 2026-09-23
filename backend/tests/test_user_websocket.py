@@ -5,8 +5,11 @@ from httpx_ws import WebSocketDisconnect, aconnect_ws
 from httpx_ws.transport import ASGIWebSocketTransport
 import pytest
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.main import app
-from app.services.realtime import publish_to_user
+from app.services.outbox import drain_once
+from app.services.realtime import address_for_user, publish
 from tests.chats import open_chat
 from tests.chat_tokens import DEFAULT_COMPANY_ID, bearer, caller_token
 
@@ -26,7 +29,7 @@ async def test_invalid_token_rejects_user_websocket_connection(client: AsyncClie
 
 
 async def test_participant_is_notified_over_user_channel_when_chat_is_created(
-    client: AsyncClient,
+    client: AsyncClient, db_session: AsyncSession
 ):
     user_a_id, token_a = caller_token()
     user_b_id, token_b = caller_token()
@@ -40,6 +43,7 @@ async def test_participant_is_notified_over_user_channel_when_chat_is_created(
         ) as ws:
             create_response = await open_chat(client, bearer(token_a), user_b_id)
             chat_id = create_response.json()["id"]
+            await drain_once(db_session)
 
             received = await ws.receive_json(timeout=5)
 
@@ -48,7 +52,7 @@ async def test_participant_is_notified_over_user_channel_when_chat_is_created(
 
 
 async def test_participant_is_notified_over_user_channel_when_message_arrives(
-    client: AsyncClient,
+    client: AsyncClient, db_session: AsyncSession
 ):
     user_a_id, token_a = caller_token()
     user_b_id, token_b = caller_token()
@@ -56,6 +60,10 @@ async def test_participant_is_notified_over_user_channel_when_message_arrives(
 
     create_response = await open_chat(client, headers_a, user_b_id)
     chat_id = create_response.json()["id"]
+    # Creating the Chat enqueued a summary of its own. The drain is FIFO, so
+    # without clearing it here the tick below would deliver that one first and
+    # this test would assert against the Chat's birth instead of the message.
+    await drain_once(db_session)
 
     async with AsyncClient(
         transport=ASGIWebSocketTransport(app=app), base_url="http://test"
@@ -70,6 +78,7 @@ async def test_participant_is_notified_over_user_channel_when_message_arrives(
                 headers=headers_a,
             )
             message_created_at = send_response.json()["created_at"]
+            await drain_once(db_session)
 
             received = await ws.receive_json(timeout=5)
 
@@ -89,7 +98,10 @@ async def test_connected_user_receives_message_published_to_their_channel(
             f"/websocket/users/me?token={token}",
             client=ws_client,
         ) as ws:
-            await publish_to_user(DEFAULT_COMPANY_ID, uuid.UUID(user_id), '{"hello": "world"}')
+            await publish(
+                address_for_user(DEFAULT_COMPANY_ID, uuid.UUID(user_id)).channel,
+                '{"hello": "world"}',
+            )
             received = await ws.receive_text(timeout=5)
 
     assert received == '{"hello": "world"}'

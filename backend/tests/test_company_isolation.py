@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.main import app
 from app.models.chat import Participant
+from app.services.outbox import drain_once
 from tests.chats import open_chat
 from tests.chat_tokens import OMITTED, bearer, caller_token
 
@@ -196,21 +197,41 @@ def test_no_read_path_builds_its_own_query_over_a_scoped_entity():
     replaces it is that `CompanyScope.select` is the only query constructor over
     a scoped entity in the whole of `app/` — so a new read path cannot skip the
     Company filter without this test naming the file and line where it did.
+
+    Two exemptions, listed here rather than left to convention so that adding a
+    third is an edit somebody has to justify — and named **per entity**, not per
+    file. `company_scope.py` is the constructor itself, so nothing in it is
+    checked. `services/outbox.py` may read `OutboxEvent` and only that: the
+    drain has no caller, no token and therefore no Company, and it reads every
+    Company's pending rows on purpose. That is safe for the one reason the
+    outbox rests on — the Company is settled into the address when the row is
+    written, so the drain routes without deciding anything.
+
+    Per entity matters. Exempting the whole file would let a `select(Chat)` grow
+    inside the drain unwatched, which is the ordinary kind of read this guard
+    exists for. An outbox row is never read on behalf of a user; if one ever is,
+    that read belongs behind `CompanyScope` and this exemption does not cover it.
     """
     scoped = _scoped_model_names()
     application = Path(__file__).resolve().parent.parent / "app"
-    scope_module = application / "core" / "company_scope.py"
+    # None means the whole file is exempt; a set names the entities it may read.
+    exempt: dict[Path, set[str] | None] = {
+        application / "core" / "company_scope.py": None,
+        application / "services" / "outbox.py": {"OutboxEvent"},
+    }
     sources = sorted(application.rglob("*.py"))
     offenders: list[str] = []
 
     for source in sources:
-        if source == scope_module:
+        allowed = exempt.get(source, set())
+        if allowed is None:
             continue
+        watched = scoped - allowed
         tree = ast.parse(source.read_text())
         offenders += [
             f"{source.relative_to(application.parent)}:{node.lineno}"
             for node in ast.walk(tree)
-            if isinstance(node, ast.Call) and _reads_a_scoped_model(node, scoped)
+            if isinstance(node, ast.Call) and _reads_a_scoped_model(node, watched)
         ]
 
     assert sources, "scanned nothing, so an empty offender list would mean nothing"
@@ -299,7 +320,9 @@ async def test_websocket_does_not_open_on_another_companys_chat(client: AsyncCli
     assert refusal.value.code == never_existed.value.code
 
 
-async def test_user_socket_does_not_receive_another_companys_chat(client: AsyncClient):
+async def test_user_socket_does_not_receive_another_companys_chat(
+    client: AsyncClient, db_session: AsyncSession
+):
     """The live chat-list channel is a read path too, and it is keyed by user alone.
 
     A user id can exist in two Companies. The Chat summary pushed over
@@ -323,6 +346,7 @@ async def test_user_socket_does_not_receive_another_companys_chat(client: AsyncC
             # B's own Company's traffic follows, so a missing first frame is a
             # boundary holding rather than a dead socket.
             in_y = await open_chat(client, bearer(token_c_in_y), str(user_b_id))
+            await drain_once(db_session)
 
             received = await socket_in_y.receive_json(timeout=5)
 

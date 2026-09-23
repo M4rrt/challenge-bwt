@@ -17,3 +17,11 @@ The deadline stays as a backstop. Having both is the point: the deadline alone c
 - [ ] Room connections revalidate authorisation periodically as well as on renewal, covering a lost supervision scope and a deactivation, not only explicit removal
 - [ ] An event from the monolith can put a token or user on a short-lived denylist whose entries expire alongside the token they block, and closes that user's connections
 - [ ] The three close codes are documented as part of the contract
+
+## Comments
+
+**2026-09-23 — nota vinda do ticket 07.**
+
+O direito de um socket aos endereços de fan-out é decidido **uma vez, no handshake** (`app/routers/websocket.py`), pelo mesmo `may_read` da API. Um Participant cujo papel mude de `staff` para `client` continua no endereço `chat:{company}:{chat}:staff` pelo resto da vida daquela conexão, e segue recebendo Staff-only Message.
+
+Este ticket já cobre revalidação na renovação e periodicamente, o que fecha o caso. Registrado aqui porque o gap não é de nenhum ticket hoje: o 07 construiu o endereço, o 05 constrói a troca de composição, e nenhum dos dois revalida uma conexão já aberta.

@@ -8,7 +8,10 @@ from httpx_ws.transport import ASGIWebSocketTransport
 from httpx_ws import aconnect_ws
 
 from app.core.config import settings
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.main import app
+from app.services.outbox import drain_once
 from tests.chats import open_chat_id
 from tests.chat_tokens import DEFAULT_COMPANY_ID, bearer, caller_token
 
@@ -114,7 +117,9 @@ async def test_unknown_chat_id_is_rejected(client: AsyncClient):
     assert response.status_code == 404
 
 
-async def test_webhook_message_delivered_live_to_connected_participant(client: AsyncClient):
+async def test_webhook_message_delivered_live_to_connected_participant(
+    client: AsyncClient, db_session: AsyncSession
+):
     user_a_id, _token = caller_token()
     headers_a = bearer(_token)
     user_b_id, _ = caller_token()
@@ -144,6 +149,7 @@ async def test_webhook_message_delivered_live_to_connected_participant(client: A
                 headers={"X-Signature": _sign(body), "Content-Type": "application/json"},
             )
             assert response.status_code == 201
+            await drain_once(db_session)
 
             received = await ws.receive_json(timeout=5)
 
@@ -154,7 +160,9 @@ async def test_webhook_message_delivered_live_to_connected_participant(client: A
     assert received["source_label"] == "Shipping Bot"
 
 
-async def test_webhook_message_not_delivered_to_other_chat(client: AsyncClient):
+async def test_webhook_message_not_delivered_to_other_chat(
+    client: AsyncClient, db_session: AsyncSession
+):
     user_a_id, _token = caller_token()
     headers_a = bearer(_token)
     user_b_id, _ = caller_token()
@@ -202,6 +210,7 @@ async def test_webhook_message_not_delivered_to_other_chat(client: AsyncClient):
                 headers={"X-Signature": _sign(own_body), "Content-Type": "application/json"},
             )
             assert own_response.status_code == 201
+            await drain_once(db_session)
 
             received = await ws.receive_json(timeout=5)
 

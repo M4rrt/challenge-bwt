@@ -7,9 +7,10 @@ from app.core.company_scope import CompanyScope
 from app.core.message_visibility import may_read, readable_visibilities
 from app.models.chat import STILL_IN_THE_CHAT, Chat, Participant
 from app.models.message import Message, MessageVisibility
-from app.schemas.message import MessageCreate, WebhookMessageCreate
-from app.services.chat import notify_participants
-from app.services.realtime import publish_message
+from app.schemas.message import MessageCreate, MessageRead, WebhookMessageCreate
+from app.services.chat import enqueue_chat_summaries
+from app.services.outbox import enqueue
+from app.services.realtime import address_for_chat, address_for_chat_staff
 
 
 class ChatNotFoundError(Exception):
@@ -65,14 +66,34 @@ async def chat_of_participant(
     return chat
 
 
-async def _persist_and_publish(
+async def _persist_and_announce(
     db: AsyncSession, scope: CompanyScope, message: Message
 ) -> Message:
+    """The Message and everything that announces it, in one transaction.
+
+    The flush is what makes that possible: it gives the row its identifier and
+    its server-side timestamp without ending the transaction, so the payloads
+    can be built from a Message that a rollback can still erase — taking every
+    announcement of it along.
+
+    The address is chosen here, once, from the visibility the sender already
+    had to be entitled to. A Staff-only Message goes to the staff address and
+    is therefore never delivered to an end client's socket, because that socket
+    is not listening there — not because anything downstream checked.
+    """
     db.add(message)
-    await db.commit()
+    await db.flush()
     await db.refresh(message)
-    await publish_message(message)
-    await notify_participants(db, scope, message.chat_id)
+
+    address = (
+        address_for_chat_staff(message.company_id, message.chat_id)
+        if message.visibility is MessageVisibility.STAFF_ONLY
+        else address_for_chat(message.company_id, message.chat_id)
+    )
+    enqueue(db, address, MessageRead.of(message).model_dump_json())
+    await enqueue_chat_summaries(db, scope, message.chat_id)
+
+    await db.commit()
     return message
 
 
@@ -102,7 +123,7 @@ async def send_message(
         visibility=data.visibility,
         body=data.body,
     )
-    return await _persist_and_publish(db, scope, message)
+    return await _persist_and_announce(db, scope, message)
 
 
 async def assert_chat_exists(
@@ -129,7 +150,7 @@ async def send_external_message(db: AsyncSession, data: WebhookMessageCreate) ->
         visibility=MessageVisibility.ALL,
         body=data.body,
     )
-    return await _persist_and_publish(db, scope, message)
+    return await _persist_and_announce(db, scope, message)
 
 
 async def list_messages(

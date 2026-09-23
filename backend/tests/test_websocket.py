@@ -3,13 +3,16 @@ from httpx_ws import WebSocketDisconnect, aconnect_ws
 from httpx_ws.transport import ASGIWebSocketTransport
 import pytest
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.main import app
+from app.services.outbox import drain_once
 from tests.chats import open_chat_id
 from tests.chat_tokens import bearer, caller_token
 
 
 async def test_participant_receives_message_sent_by_another_participant_over_websocket(
-    client: AsyncClient,
+    client: AsyncClient, db_session: AsyncSession
 ):
     user_a_id, _token = caller_token()
     headers_a = bearer(_token)
@@ -32,6 +35,7 @@ async def test_participant_receives_message_sent_by_another_participant_over_web
                 headers=headers_a,
             )
             assert response.status_code == 201
+            await drain_once(db_session)
 
             received = await ws.receive_json(timeout=5)
 

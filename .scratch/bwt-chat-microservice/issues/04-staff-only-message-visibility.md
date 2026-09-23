@@ -30,7 +30,7 @@ Nenhum caminho de leitura reescreve a regra em SQL. `readable_visibilities` mont
 
 **Default-deny decidido para tudo, não só para staff-only.** Um `user_kind` que a regra não classifica não lê nada. Uma thread vazia é uma falha que alguém reporta; uma Staff-only Message vazada é uma que ninguém vê.
 
-**Gap aceito, e é do ticket 07.** A regra vale na API e ainda não no transporte: `publish_message` manda toda mensagem para o canal único `chat:{id}`, então o cliente final com a tela aberta recebe o frame ao vivo, e o resumo de `user:{company_id}:{user_id}` carrega `last_message_at` sem filtro. Decisão consciente — o ticket 07 é o que dá à staff da Company um endereço próprio, e antecipá-lo aqui seria construir transporte sem o outbox que ele exige. Registrado no débito técnico de `backend/README.md`.
+**Gap aceito, e é do ticket 07.** A regra vale na API e ainda não no transporte: `publish_message` manda toda mensagem para o canal único `chat:{id}`, então o cliente final com a tela aberta recebe o frame ao vivo, e o resumo de `user:{company_id}:{user_id}` carrega `last_message_at` sem filtro. Decisão consciente — o ticket 07 é o que dá à staff da Company um endereço próprio, e antecipá-lo aqui seria construir transporte sem o outbox que ele exige. Registrado no débito técnico de `backend/README.md`. **Fechado no ticket 07**, que deu à staff um endereço próprio e montou o resumo de lista por papel.
 
 Fora do escopo deste ticket e cobertos pelo 09: contagem de não lidas e paginação por cursor. As duas nascem por cima de `readable_visibilities` e por isso herdam o filtro.
 

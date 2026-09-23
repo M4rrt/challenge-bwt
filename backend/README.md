@@ -21,6 +21,7 @@ app/
 ├── services/   # lógica de negócio
 ├── core/       # config, helpers de segurança, fronteira de Company
 ├── db.py       # engine async, session, declarative Base, helper de coluna enum
+├── drain.py    # processo do drain do outbox (entrypoint próprio)
 └── main.py     # instância da aplicação FastAPI
 alembic/        # ambiente de migrations (async)
 tests/
@@ -78,16 +79,37 @@ Quem chama entra como Participant com o `user_kind` do próprio token — esse c
 
 Abrir um 1:1 que já existe devolve o Chat existente ([ADR-0002](../docs/adr/0002-explicit-idempotent-chat-creation.md)). Se alguém saiu dele, aquele 1:1 já não existe como tal e um Chat novo é criado — devolver o antigo readmitiria em silêncio quem saiu.
 
-## Tempo real (WebSocket + Redis)
+## Tempo real: outbox, drain e três endereços
 
-Duas famílias de canais Redis pub/sub, uma por instância do backend (ver [ADR-0003](../docs/adr/0003-redis-pubsub-for-horizontal-scaling.md) e [`docs/architecture.md`](../docs/architecture.md) para o diagrama completo):
+A entrega deixou de acontecer dentro do request. O que o request faz é **escrever a linha** que descreve a entrega, na mesma transação da mensagem que ela anuncia; um **drain** separado publica depois. Isso compra as duas metades da mesma garantia: ninguém é avisado de uma mensagem que um rollback vai apagar, e nada se perde se o processo morrer entre o commit e o publish.
 
-- `chat:{id}` — corpo da mensagem, entregue a quem tem aquele chat aberto no WebSocket. Cada instância faz um único `PSUBSCRIBE chat:*` (não subscribe/unsubscribe por chat), evitando race de reference-counting ao abrir/fechar várias abas.
-- `user:{company_id}:{user_id}` — resumo leve ("esse chat mudou"), entregue a todo participante independente de qual chat está aberto; é o que mantém a prévia da última mensagem viva na lista de chats sem cada cliente assinar todos os chats de que participa. A Company entra na chave do canal porque o mesmo id de usuário pode existir em duas delas (ver "Isolamento por Company").
+### Os três endereços
+
+Ver [ADR-0003](../docs/adr/0003-redis-pubsub-for-horizontal-scaling.md) e [`docs/architecture.md`](../docs/architecture.md) para o diagrama. Cada instância faz `PSUBSCRIBE chat:*` e `user:*` uma única vez — não subscribe/unsubscribe por chat, o que evitaria race de reference-counting ao abrir e fechar várias abas.
+
+- `chat:{company_id}:{chat_id}` — corpo da mensagem, para todo mundo no Chat.
+- `chat:{company_id}:{chat_id}:staff` — só para a staff da Company naquele Chat. É para cá que vai uma **Staff-only Message**, e para lugar nenhum além.
+- `user:{company_id}:{user_id}` — resumo leve ("esse Chat mudou"), para manter a prévia viva na lista sem cada cliente assinar todos os seus chats.
+
+**O isolamento vem do endereço.** Nada no caminho de entrega lê uma regra ou aplica um filtro: quem pode ver um payload foi decidido quando a linha foi endereçada, e o subscriber encaminha por nome de canal sem saber o que é um Chat ou um user kind. A alternativa — um grupo por Chat mais um `if` na entrega — é justamente o `if` que todo emissor futuro precisa lembrar de escrever, e o defeito da [ADR-0008](../docs/adr/0008-domain-rewritten-in-fastapi.md) foi exatamente uma regra avaliada em mais de um lugar.
+
+O socket entra nos endereços a que seu portador tem direito **no handshake**, decidido pelo mesmo `may_read` que a API usa. O socket do cliente final nunca entrou no endereço staff — por isso não há nada para filtrar depois.
+
+A Company está nos três endereços. Para um usuário ela é estrutural: o mesmo id pode existir em duas Companies e um resumo publicado para uma cairia no socket aberto com o token da outra. Para um Chat é cinto sobre cinto já afivelado — um id de Chat já é único — e está lá porque a regra em "Isolamento por Company" é que caminho de fan-out carrega a Company na chave do canal, sem exceção para lembrar.
+
+### O drain
+
+`drain_once(db)` (`app/services/outbox.py`) processa o lote pendente uma vez e retorna quantas linhas saíram. Um único callable serve aos dois consumidores: o processo de produção (`app/drain.py`, contêiner `drain` no compose) o chama em laço, e os testes o chamam entre enviar e asserir. Isso é deliberado — um drain que só pudesse ser observado esperando uma tarefa de fundo faria de cada teste de tempo real uma corrida.
+
+Cada linha é tomada com `FOR UPDATE SKIP LOCKED`, **uma por transação**. É isso que torna o drain seguro em mais de uma réplica: uma linha que outro drain já segura é pulada em vez de esperada, então as réplicas dividem o backlog em vez de publicarem tudo em duplicata. Travar o lote inteiro não serviria — o primeiro commit solta todas as travas da transação e deixa o resto do lote desguardado enquanto ainda está sendo processado.
+
+Cada linha é **publicada e só então marcada**. A ordem é a escolha de **at-least-once**: morrer depois do publish e antes da marca reentrega aquela linha na próxima rodada, enquanto marcar antes a descartaria em silêncio. Um frame duplicado é visível e deduplicável pelo id da mensagem; um frame que ninguém mandou não é nenhum dos dois.
+
+Falha no drain é registrada em log e repetida, não fatal — seguro exatamente por causa dessa ordem: uma queda do Redis deixa toda linha não entregue pendente, e o backlog se drena sozinho quando o Redis volta. O que uma queda dessas move é `oldest_unpublished_age`, o sinal de saúde do tempo real, que o ticket 18 transforma em algo monitorado. É idade e não contagem porque mil linhas escritas há um segundo é um serviço movimentado e uma linha escrita há dez minutos é um drain parado, e uma contagem não distingue os dois.
 
 Endpoints: `WS /websocket/chats/{id}` e `WS /websocket/users/me`, ambos autenticados via chat token como query param `token` (o handshake do WebSocket não carrega header `Authorization` customizado). Isso tem um custo: query strings tendem a ser gravadas em logs de acesso de proxies/ALB e no histórico do navegador, diferente de um header — trade-off não documentado em nenhum ADR até agora. A alternativa mais comum é conectar sem token e autenticar pela primeira mensagem do socket.
 
-Se a conexão com o Redis cair, `run_subscriber` (`app/services/realtime.py`) simplesmente morre — sem log, sem retry, sem healthcheck que detecte isso. A entrega em tempo real para silenciosamente até o processo ser reiniciado.
+Se a conexão com o Redis cair, `run_subscriber` (`app/services/realtime.py`) simplesmente morre — sem log, sem retry, sem healthcheck que detecte isso. O lado de **publicação** deixou de depender disso (as linhas ficam pendentes e saem quando o Redis volta), mas o lado de **entrega** de uma instância cujo subscriber morreu continua parado em silêncio até o processo ser reiniciado.
 
 ## Autenticação
 
@@ -164,6 +186,7 @@ O predicado não diz nada sobre pertencimento: se o leitor tem lugar no Chat é 
 
 - `GET /chats/{id}/messages` filtra o histórico. Como a ordenação é por `created_at` e não por posição, a mensagem omitida **não deixa buraco**: o cliente final vê uma lista contígua, sem nada indicando que faltou algo.
 - `GET /chats` tira `last_message_at` só do que o leitor pode ler. Esse campo é o timestamp exibido ao lado do Chat **e** a chave da ordenação — sem filtro ele avançaria e flutuaria o Chat para o topo toda vez que o staff dissesse algo que o cliente final não pode ler, anunciando a Staff-only Message sem citá-la.
+- O handshake do WebSocket usa o predicado para decidir em quais endereços o socket entra (ver "Tempo real"). O socket do cliente final nunca entra no endereço staff, então a regra vale no transporte sem nenhum filtro na entrega.
 - `POST /chats/{id}/messages` valida a escrita com o **mesmo** predicado: quem escreve só endereça uma mensagem a um conjunto do qual faz parte. Isso torna `422` tanto uma staff-only num Staff Chat (não há ninguém lá para excluir, a restrição não significa nada) quanto uma escrita por cliente final (ele escreveria algo que não poderia depois ler) — sem uma segunda regra para alguém manter em dia. Recusar é melhor que guardar como mensagem comum: um rebaixamento silencioso diz ao remetente que a mensagem foi restrita quando não foi.
 
 `tests/test_message_visibility.py` cobre a tabela-verdade como função pura; `tests/test_messages.py` prova pela borda que ela está ligada. A regra é testada duas vezes de propósito — o teste de API prova a ligação, o unitário prova o ramo default-deny, que é quase inalcançável pela API.
@@ -174,10 +197,12 @@ Nenhuma leitura atravessa uma Company. A [ADR-0007](../docs/adr/0007-own-databas
 
 O piso que substitui o queryset é `app/core/company_scope.py`:
 
-- Toda linha legível carrega sua Company (`CompanyScoped` — `chats`, `participants`, `messages`).
+- Toda linha legível carrega sua Company (`CompanyScoped` — `chats`, `participants`, `messages`, `outbox`).
 - Toda leitura de uma dessas entidades nasce de `CompanyScope.select`, que tira a Company do token de quem chamou. Nenhum serviço ou router monta a própria query, e nenhum router constrói o próprio escopo: ele chega pela dependência `get_company_scope` (`app/core/security.py`).
 - O canal de lista de chats do Redis é `user:{company_id}:{user_id}`, não `user:{user_id}`. O mesmo id de usuário pode existir em duas Companies, e o resumo de Chat empurrado por `/websocket/users/me` carrega id, nome e participantes — chaveado só por usuário, ele cairia no socket aberto com o token da outra Company.
 - O filtro cai no `WHERE`, então uma linha de outra Company não é proibida, é **ausente**: um pedido cruzando a fronteira e um pedido por algo que nunca existiu devolvem `404` com o mesmo corpo, e nada na resposta distingue os dois.
+
+As exceções do teste estrutural são nomeadas **por entidade**, não por arquivo: `app/services/outbox.py` pode ler `OutboxEvent` e só isso, porque o drain não tem chamador, nem token, nem Company — e é seguro porque a Company já foi decidida dentro do endereço quando a linha foi escrita. Um `select(Chat)` crescendo dentro do drain continua sendo apontado.
 
 `tests/test_company_isolation.py` cobre cada caminho de leitura e, por último, faz um teste estrutural: ele varre a AST de todo o `app/` atrás de `select(E)`, `sa.select(E)`, `session.get(E, ...)`/`get_one` e `session.query(E)` sobre uma entidade escopada fora do módulo de escopo, e falha apontando arquivo e linha. O conjunto de entidades escopadas sai do registry do SQLAlchemy, não de uma lista escrita à mão, então uma entidade nova entra na varredura assim que é mapeada.
 
@@ -195,7 +220,7 @@ Não bloqueia o funcionamento hoje, mas seria o primeiro ponto de atenção ante
   foi aceito justamente para remover essa propriedade e ainda não está
   implementado. Ticket 19 troca por RS256 + `kid` + JWKS + `aud` obrigatório.
   Nada abaixo desta linha é um risco da mesma ordem.
-- **Uma Staff-only Message ainda vaza no WebSocket.** `publish_message` manda toda mensagem para o canal único `chat:{id}`, que todo Participant conectado lê, e o resumo de `user:{company_id}:{user_id}` carrega `last_message_at` sem filtro. A regra vale na API e ainda não no transporte. Fechar isso é o ticket 07, que dá à staff da Company um endereço próprio — o isolamento vem do endereço, não de um `if` que todo emissor futuro precise lembrar de escrever.
+- **A tabela `outbox` cresce sem coletor.** A linha publicada fica com `published_at` preenchida em vez de ser apagada, o que dá rastro de o que saiu e quando — é o que o ticket 18 monitora e o que responde "esse evento saiu?" depois de um incidente. Nada poda as linhas antigas ainda. O índice do drain é parcial (`WHERE published_at IS NULL`), então a varredura não degrada junto; o que cresce é o disco.
 - **Sem índice em `messages.chat_id`.** Nenhuma migração cria esse índice — `list_messages` (filtra por `chat_id`, ordena por `created_at`) e a busca da última mensagem por chat fazem table scan à medida que o histórico cresce.
 - **Índice de `participants` favorece a query errada.** O `UniqueConstraint(chat_id, user_id)` serve bem a checagem de membership, mas `list_chats` — chamada a cada carregamento da sidebar — filtra só por `user_id`; faltaria um índice dedicado liderado por esse campo.
 - **Sem rate limiting** em `/webhook/messages`.
