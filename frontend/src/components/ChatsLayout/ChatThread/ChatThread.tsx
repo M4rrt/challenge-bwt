@@ -14,10 +14,10 @@ import GroupIcon from '@mui/icons-material/Group'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import PersonIcon from '@mui/icons-material/Person'
 import { alpha } from '@mui/material/styles'
-import { type Message, getMe, listConversations, listMessages, listUsers, sendMessage } from '../../../lib/api'
+import { type Message, getMe, listChats, listMessages, listUsers, sendMessage } from '../../../lib/api'
 import { useAuth } from '../../../lib/auth/AuthContext'
-import { useConversationSocket } from './useConversationSocket'
-import { conversationLabel } from '../conversationLabel'
+import { useChatSocket } from './useChatSocket'
+import { chatLabel } from '../chatLabel'
 import { setLastSeenAt } from '../lastSeen'
 import { groupMessages, type SenderKind } from './messageGrouping'
 import { msnButtonSx } from '../msnButtonStyle'
@@ -51,16 +51,16 @@ const BUBBLE_BORDER_COLOR_BY_SENDER_KIND: Record<SenderKind, string> = {
   external: theme.palette.warning.light,
 }
 
-function upsertMessage(queryClient: QueryClient, conversationId: string, message: Message) {
-  queryClient.setQueryData<Message[]>(['messages', conversationId], (current = []) =>
+function upsertMessage(queryClient: QueryClient, chatId: string, message: Message) {
+  queryClient.setQueryData<Message[]>(['messages', chatId], (current = []) =>
     current.some((existing) => existing.id === message.id) ? current : [...current, message],
   )
 }
 
 const SCROLL_BOTTOM_THRESHOLD_PX = 40
 
-function Conversa() {
-  const { conversationId } = useParams<{ conversationId: string }>()
+function ChatThread() {
+  const { chatId } = useParams<{ chatId: string }>()
   const auth = useAuth()
   const token = auth.token ?? undefined
   const queryClient = useQueryClient()
@@ -77,34 +77,34 @@ function Conversa() {
     queryFn: () => listUsers(token!),
     enabled: !!token,
   })
-  const conversationsQuery = useQuery({
-    queryKey: ['conversations'],
-    queryFn: () => listConversations(token!),
+  const chatsQuery = useQuery({
+    queryKey: ['chats'],
+    queryFn: () => listChats(token!),
     enabled: !!token,
   })
   const messagesQuery = useQuery({
-    queryKey: ['messages', conversationId],
-    queryFn: () => listMessages(conversationId!, token!),
-    enabled: !!token && !!conversationId,
+    queryKey: ['messages', chatId],
+    queryFn: () => listMessages(chatId!, token!),
+    enabled: !!token && !!chatId,
   })
 
   const sendMutation = useMutation({
-    mutationFn: (body: string) => sendMessage(conversationId!, body, token!),
+    mutationFn: (body: string) => sendMessage(chatId!, body, token!),
     onSuccess: (message) => {
-      upsertMessage(queryClient, conversationId!, message)
+      upsertMessage(queryClient, chatId!, message)
     },
   })
 
   const handleSocketMessage = useCallback(
     (data: string) => {
       const message = JSON.parse(data) as Message
-      upsertMessage(queryClient, conversationId!, message)
+      upsertMessage(queryClient, chatId!, message)
     },
-    [queryClient, conversationId],
+    [queryClient, chatId],
   )
 
-  useConversationSocket({
-    conversationId: conversationId!,
+  useChatSocket({
+    chatId: chatId!,
     token,
     onMessage: handleSocketMessage,
   })
@@ -118,17 +118,17 @@ function Conversa() {
 
   useEffect(() => {
     const meId = meQuery.data?.id
-    if (!meId || !conversationId) return
+    if (!meId || !chatId) return
 
     function recordLastSeen() {
       const lastMessage = latestMessagesRef.current.at(-1)
-      setLastSeenAt(meId!, conversationId!, lastMessage?.created_at ?? null)
+      setLastSeenAt(meId!, chatId!, lastMessage?.created_at ?? null)
     }
 
     recordLastSeen()
     return recordLastSeen
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meQuery.data?.id, conversationId])
+  }, [meQuery.data?.id, chatId])
 
   useEffect(() => {
     if (isAtBottomRef.current) {
@@ -169,9 +169,9 @@ function Conversa() {
 
   const usernameById = new Map(usersQuery.data?.map((user) => [user.id, user.username]) ?? [])
   const groups = groupMessages(messages, usernameById, meQuery.data?.id)
-  const conversation = conversationsQuery.data?.find((c) => c.id === conversationId)
-  const title = conversation ? conversationLabel(conversation, meQuery.data?.id, usernameById) : undefined
-  const isGroup = (conversation?.participant_user_ids.length ?? 0) > 2
+  const chat = chatsQuery.data?.find((c) => c.id === chatId)
+  const title = chat ? chatLabel(chat, meQuery.data?.id, usernameById) : undefined
+  const isGroup = (chat?.participant_user_ids.length ?? 0) > 2
 
   return (
     <Paper
@@ -207,9 +207,9 @@ function Conversa() {
             }}
           >
             {isGroup ? (
-              <GroupIcon aria-label="Conversa em grupo" sx={{ color: 'primary.contrastText' }} />
+              <GroupIcon aria-label="Chat em grupo" sx={{ color: 'primary.contrastText' }} />
             ) : (
-              <PersonIcon aria-label="Conversa individual" sx={{ color: 'primary.contrastText' }} />
+              <PersonIcon aria-label="Chat individual" sx={{ color: 'primary.contrastText' }} />
             )}
           </Box>
           <Typography variant="h6">{title}</Typography>
@@ -301,4 +301,4 @@ function Conversa() {
   )
 }
 
-export default Conversa
+export default ChatThread

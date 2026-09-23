@@ -13,16 +13,16 @@ A user can register and log in through the browser, the JWT persists across relo
 - `frontend/src/routes/Login.tsx` — controlled form (email, password), `useMutation` (TanStack Query) calling `POST /auth/login`.
 - `frontend/src/routes/Register.tsx` — controlled form (email, password), `useMutation` calling `POST /auth/register`.
 - `frontend/src/routes/RequireAuth.tsx` — route guard. No token → `<Navigate to="/login" replace />`. Token present → renders `<Outlet />`.
-- `frontend/src/routes/Conversas.tsx` — new placeholder route, protected, shows a logout button. Will be replaced by the real conversation list in ticket 09.
-- `frontend/src/App.tsx` — adds `/login`, `/register` (public) and `/conversas` (wrapped by `RequireAuth`) routes. `AuthProvider` wraps the router.
+- `frontend/src/routes/Chats.tsx` — new placeholder route, protected, shows a logout button. Will be replaced by the real chat list in ticket 09.
+- `frontend/src/App.tsx` — adds `/login`, `/register` (public) and `/chats` (wrapped by `RequireAuth`) routes. `AuthProvider` wraps the router.
 - Backend: `backend/app/main.py` adds `CORSMiddleware`, allowed origin from new `settings.frontend_origin` (default `http://localhost:5173`, added to `Settings` in `backend/app/core/config.py` and `.env.example`).
 
 ## Data flow / error handling
 
-- **Login**: submit → `POST /auth/login` → success: `Token{access_token}` → `auth.login(token)` (writes `localStorage` + Context) → `navigate("/conversas")`. Failure (401): inline error message, no navigation.
+- **Login**: submit → `POST /auth/login` → success: `Token{access_token}` → `auth.login(token)` (writes `localStorage` + Context) → `navigate("/chats")`. Failure (401): inline error message, no navigation.
 - **Register**: submit → `POST /auth/register` → success (201): `navigate("/login")` (no auto-login). Failure (409 duplicate email, 422 validation): inline error message.
 - **RequireAuth**: checks `isAuthenticated` from Context only. Does not call `/auth/me` to validate the token server-side — out of scope for this ticket; a request rejected later with 401 is handled by whichever ticket adds that call.
-- **Logout**: button on `/conversas` calls `auth.logout()` (clears `localStorage` + Context) → `navigate("/login")`.
+- **Logout**: button on `/chats` calls `auth.logout()` (clears `localStorage` + Context) → `navigate("/login")`.
 
 ## Testing (Vitest + React Testing Library)
 
@@ -32,7 +32,7 @@ HTTP calls in tests are mocked directly (`vi.fn()` on `api.ts` functions or glob
 
 Cases (per ticket checklist):
 
-- Successful login stores a token (`localStorage` + Context) and navigates to `/conversas`.
+- Successful login stores a token (`localStorage` + Context) and navigates to `/chats`.
 - Invalid credentials (401) show an inline error, no navigation, no token stored.
 - `RequireAuth` redirects to `/login` when there is no token.
 - `AuthContext` hydrates `isAuthenticated` from an existing `localStorage` token on mount.

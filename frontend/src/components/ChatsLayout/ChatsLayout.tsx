@@ -10,15 +10,15 @@ import useMediaQuery from '@mui/material/useMediaQuery'
 import { Link as RouterLink, Outlet, useParams } from 'react-router-dom'
 import Sidebar from './Sidebar/Sidebar'
 
-function ConversasLayout() {
+function ChatsLayout() {
   const theme = useTheme()
   const isDesktop = useMediaQuery(theme.breakpoints.up('sm'))
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const { conversationId } = useParams<{ conversationId: string }>()
+  const { chatId } = useParams<{ chatId: string }>()
 
   useEffect(() => {
     setDrawerOpen(false)
-  }, [conversationId])
+  }, [chatId])
 
   return (
     <Box
@@ -36,7 +36,7 @@ function ConversasLayout() {
         <Box sx={{ flex: 1, display: 'flex', position: 'relative' }}>
           {!isDesktop && (
             <IconButton
-              aria-label="Abrir lista de conversas"
+              aria-label="Abrir lista de chats"
               onClick={() => setDrawerOpen(true)}
               sx={{
                 position: 'absolute',
@@ -105,4 +105,4 @@ function ConversasLayout() {
   )
 }
 
-export default ConversasLayout
+export default ChatsLayout

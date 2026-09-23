@@ -1,6 +1,6 @@
 # Chat Multiusuário
 
-Aplicação de chat em tempo real, com isolamento de conversas entre usuários, webhook externo autenticado por HMAC e infraestrutura provisionada via Terraform. Documentação da entrega abaixo; detalhes de cada camada nos READMEs próprios.
+Aplicação de chat em tempo real, com isolamento de chats entre usuários, webhook externo autenticado por HMAC e infraestrutura provisionada via Terraform. Documentação da entrega abaixo; detalhes de cada camada nos READMEs próprios.
 
 ## Como rodar o projeto localmente
 
@@ -29,7 +29,7 @@ Diagramas de arquitetura (fluxo de dados e infraestrutura AWS): [`docs/architect
 Decisões com trade-offs reais viraram ADR em [`docs/adr/`](docs/adr/); deferimentos mais leves e escolhas de tooling estão em [`docs/decisions.md`](docs/decisions.md). Resumo das principais:
 
 - [ADR-0001](docs/adr/0001-containerized-websocket-over-api-gateway.md) — WebSocket é servido pelo próprio container do backend, não via AWS API Gateway (evita ter que rastrear connection IDs externamente no orçamento de tempo do desafio).
-- [ADR-0002](docs/adr/0002-explicit-idempotent-conversation-creation.md) — criação de conversa é explícita (`POST /conversations`) e idempotente para 1:1, em vez de implícita no envio da primeira mensagem.
+- [ADR-0002](docs/adr/0002-explicit-idempotent-chat-creation.md) — criação de chat é explícita (`POST /chats`) e idempotente para 1:1, em vez de implícita no envio da primeira mensagem.
 - [ADR-0003](docs/adr/0003-redis-pubsub-for-horizontal-scaling.md) — Redis pub/sub para fan-out entre instâncias do backend, já que "escalabilidade" é critério de avaliação explícito do desafio.
 - [ADR-0004](docs/adr/0004-jwt-in-localstorage.md) — JWT em `localStorage` em vez de cookie `httpOnly`, trade-off consciente dado o escopo de "auth simplificada".
 - [ADR-0005](docs/adr/0005-client-side-hmac-webhook-test-page.md) — a página de teste do webhook assina o HMAC no browser; segredo aceitável de expor só porque é uma ferramenta de teste manual atrás de login.
@@ -53,17 +53,17 @@ Lista completa de itens deferidos em [`docs/decisions.md`](docs/decisions.md#def
   ticket 19, e **tem que entrar antes de qualquer tráfego de produção**.
 - **Gaps de segurança/robustez conhecidos:**
   - Sem proteção contra replay na assinatura do webhook.
-  - Sem checagem de que o `conversation_id` do webhook pertence a um participante — o segredo HMAC é a única fronteira de confiança.
-  - Sem forma segura de um sistema externo descobrir a qual conversa postar — hoje precisa saber o UUID de antemão.
+  - Sem checagem de que o `chat_id` do webhook pertence a um participante — o segredo HMAC é a única fronteira de confiança.
+  - Sem forma segura de um sistema externo descobrir a qual chat postar — hoje precisa saber o UUID de antemão.
   - Sem tiebreaker de ordenação de mensagens além de `created_at`.
   - WebSockets já abertos não revalidam o token: a conexão é autenticada uma vez, antes do `accept()`, e segue viva até cair. Com o token de quinze minutos como mecanismo de revogação ([ADR-0011](docs/adr/0011-revocation-at-the-next-token.md)), isso vira a renovação em banda e os três close codes do ticket 11.
   - O chat token trafega como query param (`?token=`) no handshake WebSocket, não como header — tende a ficar gravado em logs de acesso de proxies/ALB e em histórico do navegador. Não documentado como trade-off em nenhum ADR; a alternativa seria conectar sem token e autenticar pela primeira mensagem do socket.
-- **Ordem de participantes não é uma garantia formal.** A resposta de conversas retorna participantes ordenados por `user_id`, mas isso hoje é efeito colateral do plano de execução do Postgres sobre o índice único composto de `conversation_participants` (confirmado ao investigar o RED de um teste no ticket 23), não uma garantia de SQL/SQLAlchemy — um `ORDER BY` explícito seria o fix correto antes de depender disso.
+- **Ordem de participantes não é uma garantia formal.** A resposta de chats retorna participantes ordenados por `user_id`, mas isso hoje é efeito colateral do plano de execução do Postgres sobre o índice único composto de `participants` (confirmado ao investigar o RED de um teste no ticket 23), não uma garantia de SQL/SQLAlchemy — um `ORDER BY` explícito seria o fix correto antes de depender disso.
 - **Débito de performance e resiliência no backend, ainda não priorizado:**
-  - Sem índice em `messages.conversation_id` — `list_messages` e a busca da última mensagem por conversa fazem table scan à medida que o histórico cresce.
-  - O índice único de `conversation_participants` (`conversation_id, user_id`) favorece a checagem de membership, não `list_conversations` — que roda a cada carregamento da sidebar e filtra só por `user_id`.
+  - Sem índice em `messages.chat_id` — `list_messages` e a busca da última mensagem por chat fazem table scan à medida que o histórico cresce.
+  - O índice único de `participants` (`chat_id, user_id`) favorece a checagem de membership, não `list_chats` — que roda a cada carregamento da sidebar e filtra só por `user_id`.
   - Sem rate limiting em `/webhook/messages`.
-  - Sem paginação em nenhuma listagem (`GET /conversations`, `GET /conversations/{id}/messages`) — todas devolvem o conjunto inteiro.
+  - Sem paginação em nenhuma listagem (`GET /chats`, `GET /chats/{id}/messages`) — todas devolvem o conjunto inteiro.
   - O subscriber Redis (`run_subscriber`) não tem retry nem log se a conexão cair — a entrega em tempo real para silenciosamente até o processo reiniciar.
 - **Frontend sem camada de hooks de dados dedicada.** As query keys do TanStack Query são reescritas à mão em cada rota; centralizar isso e gerar o client TypeScript a partir do OpenAPI que o FastAPI já expõe eliminaria uma classe inteira de bugs de drift entre os schemas Pydantic e as interfaces TS mantidas manualmente em `frontend/src/lib/api.ts`.
 - **Gaps de infra conhecidos** (ver [`infra/README.md`](infra/README.md)): NAT Gateway não provisionado (custo sem uso real no desenho atual), e o ALB permanece HTTP-only mesmo com o frontend em TLS via CloudFront.

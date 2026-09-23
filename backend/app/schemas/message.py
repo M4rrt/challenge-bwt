@@ -10,14 +10,14 @@ class MessageCreate(BaseModel):
 
 class WebhookMessageCreate(BaseModel):
     company_id: uuid.UUID
-    conversation_id: uuid.UUID
+    chat_id: uuid.UUID
     body: str
     source_label: str | None = None
 
 
 class MessageRead(BaseModel):
     id: uuid.UUID
-    conversation_id: uuid.UUID
+    chat_id: uuid.UUID
     sender_id: uuid.UUID | None
     sender_type: str
     source_label: str | None

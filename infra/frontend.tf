@@ -55,7 +55,7 @@ resource "aws_cloudfront_distribution" "frontend" {
   }
 
   # React Router deep links: S3 returns 403 (no public ListBucket) or 404 for any path that
-  # isn't a real object, e.g. /conversations/123 — serve index.html instead so the SPA's
+  # isn't a real object, e.g. /chats/123 — serve index.html instead so the SPA's
   # client-side router can take over.
   custom_error_response {
     error_code         = 403

@@ -20,7 +20,7 @@ every request.
 An expiring token cannot mean reconnecting: reconnecting costs a recovery query
 and opens a window in which messages are lost. Shortly before expiry the service
 warns the connection; the client obtains a new token and sends it over that same
-connection; the service revalidates the token **and the room's authorisation**
+connection; the service revalidates the token **and the Chat's authorisation**
 and confirms. That is the moment revocation actually happens — the monolith
 simply does not issue the next token, or issues it without the scope.
 
@@ -33,14 +33,14 @@ Having both is the point. The deadline alone costs a recovery every fifteen
 minutes; in-band renewal alone creates a path where forgetting to reschedule the
 deadline leaves a connection alive forever — and that defect is silent.
 
-## Whoever loses access leaves the room
+## Whoever loses access leaves the Chat
 
-Authorising only at connect time means removing a participant announces it to the
-room but evicts nobody: until they reconnect, that person keeps receiving
-messages. The service indexes its connections by room **and by user**, so a
-removal closes that user's connections in that room with a dedicated *access
+Authorising only at connect time means removing a Participant announces it to the
+Chat but evicts nobody: until they reconnect, that person keeps receiving
+messages. The service indexes its connections by Chat **and by user**, so a
+removal closes that user's connections in that Chat with a dedicated *access
 revoked* code — the token stays valid for everything else. Beyond that, every
-room connection revalidates authorisation periodically and on every token
+Chat connection revalidates authorisation periodically and on every token
 renewal, which covers losing the supervision scope and being deactivated, not
 just explicit removal.
 
@@ -59,6 +59,6 @@ the command leaves ([ADR-0010](0010-no-request-depends-on-the-monolith.md)).
 
 On the client side this requires distinguishing three closures that cannot be
 treated alike: token expired (renew and reconnect), access revoked (leave the
-room, do not retry) and network failure (exponential backoff). Treating them all
+Chat, do not retry) and network failure (exponential backoff). Treating them all
 as failure turns every expiry into a growing wait; treating them all as expiry
-makes the client hammer a room it was removed from.
+makes the client hammer a Chat it was removed from.

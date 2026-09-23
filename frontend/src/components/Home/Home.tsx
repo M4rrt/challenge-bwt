@@ -36,7 +36,7 @@ function Home() {
     mutationFn: () => loginRequest(email, password),
     onSuccess: (data) => {
       auth.login(data.access_token, data.refresh_token)
-      navigate('/conversas')
+      navigate('/chats')
     },
   })
 
@@ -46,7 +46,7 @@ function Home() {
   }
 
   if (auth.isAuthenticated) {
-    return <Navigate to="/conversas" replace />
+    return <Navigate to="/chats" replace />
   }
 
   return (

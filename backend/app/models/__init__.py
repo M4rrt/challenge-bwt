@@ -1,4 +1,4 @@
-from app.models.conversation import Conversation, ConversationParticipant
+from app.models.chat import Chat, ChatType, Participant, ParticipantRole
 from app.models.message import Message
 
-__all__ = ["Conversation", "ConversationParticipant", "Message"]
+__all__ = ["Chat", "ChatType", "Participant", "ParticipantRole", "Message"]

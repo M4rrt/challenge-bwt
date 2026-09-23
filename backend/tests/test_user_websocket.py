@@ -7,7 +7,8 @@ import pytest
 
 from app.main import app
 from app.services.realtime import publish_to_user
-from tests.chat_tokens import DEFAULT_COMPANY_ID, caller_token
+from tests.chats import open_chat
+from tests.chat_tokens import DEFAULT_COMPANY_ID, bearer, caller_token
 
 
 async def test_invalid_token_rejects_user_websocket_connection(client: AsyncClient):
@@ -24,7 +25,7 @@ async def test_invalid_token_rejects_user_websocket_connection(client: AsyncClie
     assert exc_info.value.code == 1008
 
 
-async def test_participant_is_notified_over_user_channel_when_conversation_is_created(
+async def test_participant_is_notified_over_user_channel_when_chat_is_created(
     client: AsyncClient,
 ):
     user_a_id, token_a = caller_token()
@@ -37,16 +38,12 @@ async def test_participant_is_notified_over_user_channel_when_conversation_is_cr
             f"/websocket/users/me?token={token_b}",
             client=ws_client,
         ) as ws:
-            create_response = await client.post(
-                "/conversations",
-                json={"participant_user_ids": [user_b_id]},
-                headers={"Authorization": f"Bearer {token_a}"},
-            )
-            conversation_id = create_response.json()["id"]
+            create_response = await open_chat(client, bearer(token_a), user_b_id)
+            chat_id = create_response.json()["id"]
 
             received = await ws.receive_json(timeout=5)
 
-    assert received["id"] == conversation_id
+    assert received["id"] == chat_id
     assert set(received["participant_user_ids"]) == {user_a_id, user_b_id}
 
 
@@ -55,14 +52,10 @@ async def test_participant_is_notified_over_user_channel_when_message_arrives(
 ):
     user_a_id, token_a = caller_token()
     user_b_id, token_b = caller_token()
-    headers_a = {"Authorization": f"Bearer {token_a}"}
+    headers_a = bearer(token_a)
 
-    create_response = await client.post(
-        "/conversations",
-        json={"participant_user_ids": [user_b_id]},
-        headers=headers_a,
-    )
-    conversation_id = create_response.json()["id"]
+    create_response = await open_chat(client, headers_a, user_b_id)
+    chat_id = create_response.json()["id"]
 
     async with AsyncClient(
         transport=ASGIWebSocketTransport(app=app), base_url="http://test"
@@ -72,7 +65,7 @@ async def test_participant_is_notified_over_user_channel_when_message_arrives(
             client=ws_client,
         ) as ws:
             send_response = await client.post(
-                f"/conversations/{conversation_id}/messages",
+                f"/chats/{chat_id}/messages",
                 json={"body": "oi"},
                 headers=headers_a,
             )
@@ -80,7 +73,7 @@ async def test_participant_is_notified_over_user_channel_when_message_arrives(
 
             received = await ws.receive_json(timeout=5)
 
-    assert received["id"] == conversation_id
+    assert received["id"] == chat_id
     assert received["last_message_at"] == message_created_at
 
 

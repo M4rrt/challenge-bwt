@@ -50,14 +50,42 @@ Duas exceções:
 6. Rode a API: `uv run uvicorn app.main:app --reload`
 7. Health check: `curl http://localhost:8000/health`
 
+## Domínio: Chat e Participant
+
+O vocabulário vem do `CONTEXT.md` na raiz — Chat, Company, Staff Chat, Client Chat, Participant. As palavras que ele lista em _Avoid_ (Conversation, Conversa, Room, Sala) não aparecem em `app/` nem em `tests/`, e `tests/test_glossary.py` falha apontando arquivo e linha se voltarem. `alembic/versions/` fica de fora: uma migration é um registro datado, e a que criou `conversations` descreve um schema que realmente existiu com esse nome.
+
+- **Chat** carrega Company, tipo (`staff` | `client`), nome opcional e timestamps. 1:1 e grupo são a mesma entidade — um 1:1 é um Chat com exatamente dois Participants, não um conceito à parte.
+- **Participant** carrega Chat, identificador do usuário, Company, papel (`staff` | `client`), `joined_at`, `left_at` e o estado de leitura (`last_read_at`, `last_read_message_id`). O estado de leitura ainda não tem leitor: entra no ticket 09.
+- **Sair de um Chat é um instante, não um delete.** Com `left_at` preenchido a pessoa some de todo caminho de leitura sem que a linha seja apagada — as mensagens que ela mandou seguem atribuíveis e o Chat segue explicável. `STILL_IN_THE_CHAT` (`app/models/chat.py`) é a única grafia de "é Participant atual" em query, e `Chat.current_participants` a única em Python.
+
+### `POST /chats`
+
+A criação pública ainda existe e é substituída pelo comando interno do ticket 05. O corpo nomeia o tipo do Chat e o kind de cada Participant, porque o serviço não tem tabela de usuários para consultar:
+
+```json
+{
+  "type": "staff",
+  "participants": [{ "user_id": "<uuid>", "user_kind": "staff" }],
+  "name": null
+}
+```
+
+Quem chama entra como Participant com o `user_kind` do próprio token — esse claim o comando não escolhe. O serviço valida a **forma** do Chat, que é invariante dele e não do chamador, e responde `422` quando ela não fecha:
+
+- `a staff chat cannot contain an end client` — Staff Chat é definido pela ausência do cliente final.
+- `name is required for group chats` — grupo (3+ Participants) precisa de nome; 1:1 não.
+- `unrecognised user kind` — um kind fora de `staff`/`client` não tem lugar em regras escritas nessas duas palavras.
+
+Abrir um 1:1 que já existe devolve o Chat existente ([ADR-0002](../docs/adr/0002-explicit-idempotent-chat-creation.md)). Se alguém saiu dele, aquele 1:1 já não existe como tal e um Chat novo é criado — devolver o antigo readmitiria em silêncio quem saiu.
+
 ## Tempo real (WebSocket + Redis)
 
 Duas famílias de canais Redis pub/sub, uma por instância do backend (ver [ADR-0003](../docs/adr/0003-redis-pubsub-for-horizontal-scaling.md) e [`docs/architecture.md`](../docs/architecture.md) para o diagrama completo):
 
-- `conversation:{id}` — corpo da mensagem, entregue a quem tem aquela conversa aberta no WebSocket. Cada instância faz um único `PSUBSCRIBE conversation:*` (não subscribe/unsubscribe por conversa), evitando race de reference-counting ao abrir/fechar várias abas.
-- `user:{company_id}:{user_id}` — resumo leve ("essa conversa mudou"), entregue a todo participante independente de qual conversa está aberta; é o que mantém a prévia da última mensagem viva na lista de conversas sem cada cliente assinar todas as conversas de que participa. A Company entra na chave do canal porque o mesmo id de usuário pode existir em duas delas (ver "Isolamento por Company").
+- `chat:{id}` — corpo da mensagem, entregue a quem tem aquele chat aberto no WebSocket. Cada instância faz um único `PSUBSCRIBE chat:*` (não subscribe/unsubscribe por chat), evitando race de reference-counting ao abrir/fechar várias abas.
+- `user:{company_id}:{user_id}` — resumo leve ("esse chat mudou"), entregue a todo participante independente de qual chat está aberto; é o que mantém a prévia da última mensagem viva na lista de chats sem cada cliente assinar todos os chats de que participa. A Company entra na chave do canal porque o mesmo id de usuário pode existir em duas delas (ver "Isolamento por Company").
 
-Endpoints: `WS /websocket/conversations/{id}` e `WS /websocket/users/me`, ambos autenticados via chat token como query param `token` (o handshake do WebSocket não carrega header `Authorization` customizado). Isso tem um custo: query strings tendem a ser gravadas em logs de acesso de proxies/ALB e no histórico do navegador, diferente de um header — trade-off não documentado em nenhum ADR até agora. A alternativa mais comum é conectar sem token e autenticar pela primeira mensagem do socket.
+Endpoints: `WS /websocket/chats/{id}` e `WS /websocket/users/me`, ambos autenticados via chat token como query param `token` (o handshake do WebSocket não carrega header `Authorization` customizado). Isso tem um custo: query strings tendem a ser gravadas em logs de acesso de proxies/ALB e no histórico do navegador, diferente de um header — trade-off não documentado em nenhum ADR até agora. A alternativa mais comum é conectar sem token e autenticar pela primeira mensagem do socket.
 
 Se a conexão com o Redis cair, `run_subscriber` (`app/services/realtime.py`) simplesmente morre — sem log, sem retry, sem healthcheck que detecte isso. A entrega em tempo real para silenciosamente até o processo ser reiniciado.
 
@@ -70,11 +98,11 @@ JWT de acesso de curta duração + refresh token opaco (ver [ADR-0004](../docs/a
 
 ## Webhook
 
-`POST /webhook/messages` permite que um sistema externo entregue uma mensagem em uma conversa existente, autenticado por uma assinatura HMAC de segredo compartilhado em vez de um JWT.
+`POST /webhook/messages` permite que um sistema externo entregue uma mensagem em um chat existente, autenticado por uma assinatura HMAC de segredo compartilhado em vez de um JWT.
 
 **Request:**
 
-- Body (JSON): `{ "company_id": "<uuid>", "conversation_id": "<uuid>", "body": "<texto>", "source_label": "<string, opcional>" }` — `company_id` é a Company em que a mensagem está sendo escrita, e a conversa é lida dentro dela: apontar para uma conversa de outra Company responde `404`, igual a uma conversa que não existe. `source_label` identifica o remetente externo na UI (ex.: `"Shipping Bot"`); omita ou envie `null` para um fallback genérico.
+- Body (JSON): `{ "company_id": "<uuid>", "chat_id": "<uuid>", "body": "<texto>", "source_label": "<string, opcional>" }` — `company_id` é a Company em que a mensagem está sendo escrita, e o chat é lido dentro dela: apontar para um chat de outra Company responde `404`, igual a um chat que não existe. `source_label` identifica o remetente externo na UI (ex.: `"Shipping Bot"`); omita ou envie `null` para um fallback genérico.
 - Header `X-Signature`: `HMAC-SHA256(WEBHOOK_HMAC_SECRET, raw_request_body_bytes)` em hexadecimal.
 
 A assinatura deve ser calculada sobre os **bytes exatos** enviados como corpo da requisição — reserializar o JSON (ordem de chaves diferente, espaços em branco) antes de assinar produz uma assinatura que falha na verificação, já que o servidor faz hash dos bytes brutos recebidos em vez de recodificar o payload já parseado.
@@ -84,7 +112,7 @@ Exemplo (Python):
 ```python
 import hmac, hashlib, httpx
 
-body = b'{"company_id": "0f1d6c21-9a1e-4f7a-9c2b-0f4b1a7e3d55", "conversation_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6", "body": "Your order shipped!", "source_label": "Shipping Bot"}'
+body = b'{"company_id": "0f1d6c21-9a1e-4f7a-9c2b-0f4b1a7e3d55", "chat_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6", "body": "Your order shipped!", "source_label": "Shipping Bot"}'
 signature = hmac.new(settings.webhook_hmac_secret.encode(), body, hashlib.sha256).hexdigest()
 
 httpx.post(
@@ -94,14 +122,14 @@ httpx.post(
 )
 ```
 
-**Respostas:** `401` se a assinatura estiver ausente/inválida (checado antes de qualquer acesso ao banco), `404` se `conversation_id` não referenciar uma conversa existente **dentro de `company_id`**, `201` com a mensagem criada em caso de sucesso — entregue em tempo real aos participantes conectados da conversa pelo mesmo caminho Redis/WebSocket de uma mensagem normal.
+**Respostas:** `401` se a assinatura estiver ausente/inválida (checado antes de qualquer acesso ao banco), `404` se `chat_id` não referenciar um chat existente **dentro de `company_id`**, `201` com a mensagem criada em caso de sucesso — entregue em tempo real aos participantes conectados do chat pelo mesmo caminho Redis/WebSocket de uma mensagem normal.
 
 **Lacunas conhecidas** (ver `docs/decisions.md`):
 
 - Sem proteção contra replay — uma requisição válida capturada pode ser reenviada.
-- Sem forma segura de o sistema externo descobrir qual `conversation_id` usar — ele precisa já saber o UUID de antemão.
-- **O segredo HMAC é um só para todas as Companies.** O payload agora nomeia a `company_id` e uma conversa de outra Company é recusada, mas nada amarra a assinatura àquela Company: quem tem o segredo pode assinar um payload nomeando qualquer Company. Ticket 14 dá a cada Company um segredo próprio.
-- Sem checagem de que o `conversation_id` pertence a um participante — dentro da Company certa, qualquer chamador com o segredo pode injetar mensagem em qualquer conversa cujo UUID conheça.
+- Sem forma segura de o sistema externo descobrir qual `chat_id` usar — ele precisa já saber o UUID de antemão.
+- **O segredo HMAC é um só para todas as Companies.** O payload agora nomeia a `company_id` e um chat de outra Company é recusado, mas nada amarra a assinatura àquela Company: quem tem o segredo pode assinar um payload nomeando qualquer Company. Ticket 14 dá a cada Company um segredo próprio.
+- Sem checagem de que o `chat_id` pertence a um participante — dentro da Company certa, qualquer chamador com o segredo pode injetar mensagem em qualquer chat cujo UUID conheça.
 
 ## Testes
 
@@ -111,24 +139,24 @@ TDD, red-green-refactor conforme o `CLAUDE.md` do repositório — os testes sã
 uv run pytest
 ```
 
-**Ressalva conhecida:** as respostas de `Conversation` retornam participantes ordenados por `user_id`, mas essa ordenação hoje é efeito colateral do plano de execução do Postgres sobre o índice único composto de `conversation_participants`, não uma garantia de um `ORDER BY` explícito — descoberto ao escrever o RED de um teste de regressão do ticket 23, que passava mesmo sem o fix pretendido. Adicionar um `ORDER BY` explícito antes de depender mais disso.
+As respostas de `Chat` retornam participantes ordenados por `user_id`, e essa ordenação é um `order_by` explícito no relacionamento, não um efeito colateral do plano de execução do Postgres — a distinção custou o RED de um teste de regressão do ticket 23, que passava mesmo sem o fix pretendido. `tests/test_chat_model.py` falha se o `order_by` sair.
 
 ## Isolamento por Company
 
-Nenhuma leitura atravessa uma Company. A [ADR-0007](../docs/adr/0007-own-database-company-boundary-in-code.md) tirou esse isolamento do banco e o deixou no código, e chamou isso de risco central da arquitetura: sem um queryset carregando o invariante, todo caminho de leitura precisa filtrar por Company explicitamente, e um que esqueça vaza as conversas de uma Company para outra.
+Nenhuma leitura atravessa uma Company. A [ADR-0007](../docs/adr/0007-own-database-company-boundary-in-code.md) tirou esse isolamento do banco e o deixou no código, e chamou isso de risco central da arquitetura: sem um queryset carregando o invariante, todo caminho de leitura precisa filtrar por Company explicitamente, e um que esqueça vaza os chats de uma Company para outra.
 
 O piso que substitui o queryset é `app/core/company_scope.py`:
 
-- Toda linha legível carrega sua Company (`CompanyScoped` — `conversations`, `conversation_participants`, `messages`).
+- Toda linha legível carrega sua Company (`CompanyScoped` — `chats`, `participants`, `messages`).
 - Toda leitura de uma dessas entidades nasce de `CompanyScope.select`, que tira a Company do token de quem chamou. Nenhum serviço ou router monta a própria query, e nenhum router constrói o próprio escopo: ele chega pela dependência `get_company_scope` (`app/core/security.py`).
-- O canal de lista de conversas do Redis é `user:{company_id}:{user_id}`, não `user:{user_id}`. O mesmo id de usuário pode existir em duas Companies, e o resumo de Chat empurrado por `/websocket/users/me` carrega id, nome e participantes — chaveado só por usuário, ele cairia no socket aberto com o token da outra Company.
+- O canal de lista de chats do Redis é `user:{company_id}:{user_id}`, não `user:{user_id}`. O mesmo id de usuário pode existir em duas Companies, e o resumo de Chat empurrado por `/websocket/users/me` carrega id, nome e participantes — chaveado só por usuário, ele cairia no socket aberto com o token da outra Company.
 - O filtro cai no `WHERE`, então uma linha de outra Company não é proibida, é **ausente**: um pedido cruzando a fronteira e um pedido por algo que nunca existiu devolvem `404` com o mesmo corpo, e nada na resposta distingue os dois.
 
 `tests/test_company_isolation.py` cobre cada caminho de leitura e, por último, faz um teste estrutural: ele varre a AST de todo o `app/` atrás de `select(E)`, `sa.select(E)`, `session.get(E, ...)`/`get_one` e `session.query(E)` sobre uma entidade escopada fora do módulo de escopo, e falha apontando arquivo e linha. O conjunto de entidades escopadas sai do registry do SQLAlchemy, não de uma lista escrita à mão, então uma entidade nova entra na varredura assim que é mapeada.
 
 **Ao adicionar uma entidade legível nova, acrescente o teste de isolamento dela** — o teste estrutural garante que a query passe pelo escopo, não que alguém tenha verificado o comportamento pela borda. Dois limites que ele não cobre, e que o teste documenta: ele reconhece `scope.select(...)` pela grafia do receptor (não por tipo), e `text("SELECT ...")` cru é invisível para ele. **Fan-out também não é leitura de query**: um caminho que empurra dados por canal (Redis, WebSocket) precisa carregar a Company na própria chave do canal — foi assim que `/websocket/users/me` vazou antes de ser corrigido.
 
-O webhook é o único chamador sem token: ele nomeia a Company no próprio payload (veja a seção Webhook) e lê a conversa dentro dela.
+O webhook é o único chamador sem token: ele nomeia a Company no próprio payload (veja a seção Webhook) e lê o chat dentro dela.
 
 ## Débito técnico conhecido
 
@@ -140,10 +168,10 @@ Não bloqueia o funcionamento hoje, mas seria o primeiro ponto de atenção ante
   foi aceito justamente para remover essa propriedade e ainda não está
   implementado. Ticket 19 troca por RS256 + `kid` + JWKS + `aud` obrigatório.
   Nada abaixo desta linha é um risco da mesma ordem.
-- **Sem índice em `messages.conversation_id`.** Nenhuma migração cria esse índice — `list_messages` (filtra por `conversation_id`, ordena por `created_at`) e a busca da última mensagem por conversa fazem table scan à medida que o histórico cresce.
-- **Índice de `conversation_participants` favorece a query errada.** O `UniqueConstraint(conversation_id, user_id)` serve bem a checagem de membership, mas `list_conversations` — chamada a cada carregamento da sidebar — filtra só por `user_id`; faltaria um índice dedicado liderado por esse campo.
+- **Sem índice em `messages.chat_id`.** Nenhuma migração cria esse índice — `list_messages` (filtra por `chat_id`, ordena por `created_at`) e a busca da última mensagem por chat fazem table scan à medida que o histórico cresce.
+- **Índice de `participants` favorece a query errada.** O `UniqueConstraint(chat_id, user_id)` serve bem a checagem de membership, mas `list_chats` — chamada a cada carregamento da sidebar — filtra só por `user_id`; faltaria um índice dedicado liderado por esse campo.
 - **Sem rate limiting** em `/webhook/messages`.
-- **Sem paginação** em nenhuma listagem (`GET /conversations`, `GET /conversations/{id}/messages`) — todas devolvem o conjunto inteiro.
+- **Sem paginação** em nenhuma listagem (`GET /chats`, `GET /chats/{id}/messages`) — todas devolvem o conjunto inteiro.
 - **Zero logging estruturado** em todo o `app/` — combinado com o subscriber Redis sem tratamento de falha (acima), é o ponto mais arriscado de operar isso em produção sem visibilidade.
 
 ## Migrations

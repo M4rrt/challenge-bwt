@@ -46,14 +46,14 @@ function WebhookTestPage() {
   const token = auth.token ?? undefined
   const meQuery = useQuery({ queryKey: ['me'], queryFn: () => getMe(token!), enabled: !!token })
 
-  const [conversationId, setConversationId] = useState('')
+  const [chatId, setChatId] = useState('')
   const [body, setBody] = useState('')
   const [senderName, setSenderName] = useState('')
 
   const mutation = useMutation({
     mutationFn: async (): Promise<Message> => {
       const rawBody = JSON.stringify({
-        conversation_id: conversationId,
+        chat_id: chatId,
         body,
         source_label: senderName || null,
       })
@@ -92,12 +92,12 @@ function WebhookTestPage() {
         actions={
           <Button
             component={RouterLink}
-            to="/conversas"
+            to="/chats"
             size="small"
             startIcon={<ArrowBackIcon fontSize="small" />}
             sx={{ color: '#fff' }}
           >
-            Voltar às Conversas
+            Voltar aos Chats
           </Button>
         }
       >
@@ -137,14 +137,14 @@ function WebhookTestPage() {
           sx={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 2 }}
         >
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-            <Typography component="label" htmlFor="webhook-conversation-id" variant="body2" sx={{ fontWeight: 700 }}>
-              Conversation ID
+            <Typography component="label" htmlFor="webhook-chat-id" variant="body2" sx={{ fontWeight: 700 }}>
+              Chat ID
             </Typography>
             <TextField
-              id="webhook-conversation-id"
-              value={conversationId}
-              onChange={(event) => setConversationId(event.target.value)}
-              placeholder="ex: 3f29a1b2-conversa"
+              id="webhook-chat-id"
+              value={chatId}
+              onChange={(event) => setChatId(event.target.value)}
+              placeholder="ex: 3f29a1b2-chat"
               slotProps={{
                 htmlInput: { required: true },
                 input: {
@@ -215,8 +215,8 @@ function WebhookTestPage() {
             <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '2px 8px' }}>
               <Typography component="dt" variant="body2" sx={{ fontWeight: 500 }}>id</Typography>
               <Typography component="dd" variant="body2" sx={{ m: 0 }}>{mutation.data.id}</Typography>
-              <Typography component="dt" variant="body2" sx={{ fontWeight: 500 }}>conversation_id</Typography>
-              <Typography component="dd" variant="body2" sx={{ m: 0 }}>{mutation.data.conversation_id}</Typography>
+              <Typography component="dt" variant="body2" sx={{ fontWeight: 500 }}>chat_id</Typography>
+              <Typography component="dd" variant="body2" sx={{ m: 0 }}>{mutation.data.chat_id}</Typography>
               <Typography component="dt" variant="body2" sx={{ fontWeight: 500 }}>sender_type</Typography>
               <Typography component="dd" variant="body2" sx={{ m: 0 }}>{mutation.data.sender_type}</Typography>
               <Typography component="dt" variant="body2" sx={{ fontWeight: 500 }}>source_label</Typography>
@@ -236,7 +236,7 @@ function WebhookTestPage() {
       </WindowChrome>
       <Link
         component={RouterLink}
-        to="/conversas"
+        to="/chats"
         underline="none"
         sx={{
           display: 'inline-flex',
@@ -258,7 +258,7 @@ function WebhookTestPage() {
         }}
       >
         <ArrowBackIcon fontSize="inherit" />
-        Voltar às Conversas
+        Voltar aos Chats
       </Link>
     </Box>
   )

@@ -118,7 +118,7 @@ export interface UserSummary {
   username: string
 }
 
-export interface Conversation {
+export interface Chat {
   id: string
   name: string | null
   participant_user_ids: string[]
@@ -133,17 +133,17 @@ export function listUsers(token: string): Promise<UserSummary[]> {
   return apiFetch<UserSummary[]>('/users', {}, token)
 }
 
-export function listConversations(token: string): Promise<Conversation[]> {
-  return apiFetch<Conversation[]>('/conversations', {}, token)
+export function listChats(token: string): Promise<Chat[]> {
+  return apiFetch<Chat[]>('/chats', {}, token)
 }
 
-export function createConversation(
+export function createChat(
   participantUserIds: string[],
   name: string | undefined,
   token: string,
-): Promise<Conversation> {
-  return apiFetch<Conversation>(
-    '/conversations',
+): Promise<Chat> {
+  return apiFetch<Chat>(
+    '/chats',
     {
       method: 'POST',
       body: JSON.stringify({ participant_user_ids: participantUserIds, name }),
@@ -154,7 +154,7 @@ export function createConversation(
 
 export interface Message {
   id: string
-  conversation_id: string
+  chat_id: string
   sender_id: string | null
   sender_type: string
   source_label: string | null
@@ -162,17 +162,17 @@ export interface Message {
   created_at: string
 }
 
-export function listMessages(conversationId: string, token: string): Promise<Message[]> {
-  return apiFetch<Message[]>(`/conversations/${conversationId}/messages`, {}, token)
+export function listMessages(chatId: string, token: string): Promise<Message[]> {
+  return apiFetch<Message[]>(`/chats/${chatId}/messages`, {}, token)
 }
 
 export function sendMessage(
-  conversationId: string,
+  chatId: string,
   body: string,
   token: string,
 ): Promise<Message> {
   return apiFetch<Message>(
-    `/conversations/${conversationId}/messages`,
+    `/chats/${chatId}/messages`,
     { method: 'POST', body: JSON.stringify({ body }) },
     token,
   )

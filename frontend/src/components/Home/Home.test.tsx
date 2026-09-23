@@ -20,7 +20,7 @@ function renderHome() {
         <MemoryRouter initialEntries={['/']}>
           <Routes>
             <Route path="/" element={<Home />} />
-            <Route path="/conversas" element={<div>Conversas page</div>} />
+            <Route path="/chats" element={<div>Chats page</div>} />
           </Routes>
         </MemoryRouter>
       </AuthProvider>
@@ -44,7 +44,7 @@ describe('Home', () => {
     expect(screen.getByRole('link', { name: 'Cadastre-se aqui' })).toHaveAttribute('href', '/register')
   })
 
-  it('stores the token and navigates to /conversas on success', async () => {
+  it('stores the token and navigates to /chats on success', async () => {
     vi.mocked(login).mockResolvedValue({
       access_token: 'token-123',
       refresh_token: 'refresh-123',
@@ -57,7 +57,7 @@ describe('Home', () => {
     await user.type(screen.getByLabelText('Senha'), 'Senha-Forte-123')
     await user.click(screen.getByRole('button', { name: 'Entrar' }))
 
-    await waitFor(() => expect(screen.getByText('Conversas page')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Chats page')).toBeInTheDocument())
     expect(localStorage.getItem('chat-app:token')).toBe('token-123')
     expect(localStorage.getItem('chat-app:refresh-token')).toBe('refresh-123')
   })
@@ -72,15 +72,15 @@ describe('Home', () => {
     await user.click(screen.getByRole('button', { name: 'Entrar' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Credenciais inválidas')
-    expect(screen.queryByText('Conversas page')).not.toBeInTheDocument()
+    expect(screen.queryByText('Chats page')).not.toBeInTheDocument()
     expect(localStorage.getItem('chat-app:token')).toBeNull()
   })
 
-  it('redirects to /conversas when already authenticated', () => {
+  it('redirects to /chats when already authenticated', () => {
     localStorage.setItem('chat-app:token', 'existing-token')
 
     renderHome()
 
-    expect(screen.getByText('Conversas page')).toBeInTheDocument()
+    expect(screen.getByText('Chats page')).toBeInTheDocument()
   })
 })

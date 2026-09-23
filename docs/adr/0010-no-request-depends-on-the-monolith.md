@@ -34,7 +34,7 @@ signed the command is already the authority on.
 An alternative considered and rejected was a **signed pass**: the monolith would
 validate and hand the interface a short-lived pass to present to the service. It
 removes even the monolith-to-service call, but it does not cover a chat born from
-a business event — a negotiation opens, a conversation opens — where there is no
+a business event — a negotiation opens, a chat opens — where there is no
 browser to carry any pass. A monolith-to-service call creates no dependency of
 the service on anything: if the service is down, composition fails, which it
 would anyway.
@@ -52,7 +52,7 @@ Monolith down means no new chats and no new participants; existing chats keep
 sending and receiving normally. That is a far better degradation profile than the
 reverse, and it is what justifies the extraction.
 
-The interface talks to two origins — the service for conversation, the monolith
+The interface talks to two origins — the service for chat, the monolith
 for composition and for obtaining a chat token — which requires CORS on the
 monolith for the chat's origin.
 
