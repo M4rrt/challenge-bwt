@@ -56,7 +56,7 @@ Duas exceções:
 O vocabulário vem do `CONTEXT.md` na raiz — Chat, Company, Staff Chat, Client Chat, Participant. As palavras que ele lista em _Avoid_ (Conversation, Conversa, Room, Sala) não aparecem em `app/` nem em `tests/`, e `tests/test_glossary.py` falha apontando arquivo e linha se voltarem. `alembic/versions/` fica de fora: uma migration é um registro datado, e a que criou `conversations` descreve um schema que realmente existiu com esse nome.
 
 - **Chat** carrega Company, tipo (`staff` | `client`), nome opcional e timestamps. 1:1 e grupo são a mesma entidade — um 1:1 é um Chat com exatamente dois Participants, não um conceito à parte.
-- **Participant** carrega Chat, identificador do usuário, Company, papel (`staff` | `client`), `joined_at`, `left_at` e o estado de leitura (`last_read_at`, `last_read_message_id`). O estado de leitura ainda não tem leitor: entra no ticket 09.
+- **Participant** carrega Chat, identificador do usuário, Company, papel (`staff` | `client`), `joined_at`, `left_at` e o estado de leitura (`last_read_at`, `last_read_message_id`) — a marca d'água que o ticket 09 passou a ler e escrever; ver "Ler: paginação por cursor, marca d'água e não lidas".
 - **Sair de um Chat é um instante, não um delete.** Com `left_at` preenchido a pessoa some de todo caminho de leitura sem que a linha seja apagada — as mensagens que ela mandou seguem atribuíveis e o Chat segue explicável. `STILL_IN_THE_CHAT` (`app/models/chat.py`) é a única grafia de "é Participant atual" em query, e `Chat.current_participants` a única em Python.
 
 ### Composição é um comando, não um pedido do browser
@@ -378,6 +378,110 @@ enumerar as Staff-only Messages de um Chat pedindo para apagar identificador por
 O tombstone sai no mesmo endereço em que a mensagem foi anunciada (`_address_of`), então quem viu é
 exatamente quem é avisado — o cliente final nunca é informado de que sumiu algo que ele não podia nomear.
 
+## Ler: paginação por cursor, marca d'água e não lidas
+
+### A ordem tem desempate
+
+`list_messages` ordena por `(created_at, id)`, não só por `created_at`. Duas mensagens que o relógio
+não separa teriam ordem relativa decidida pelo plano de execução — e podendo mudar entre duas leituras
+das mesmas linhas. Isso não é só desleixo: o cursor pagina **exatamente sobre essa ordem**, então um par
+que sai de um jeito numa página e do outro na seguinte é uma mensagem pulada ou servida duas vezes. O
+identificador é o desempate: arbitrário (um uuid v4 não diz nada sobre tempo), mas total e estável, que
+é tudo que um cursor precisa. `OLDEST_FIRST` e `NEWEST_FIRST` (`app/services/message.py`) são a única
+grafia dessa ordem, e o segundo é derivado do primeiro — as duas direções discordarem do desempate é
+justamente o bug que o desempate existe para evitar.
+
+O índice `ix_messages_chat_id_created_at_id` (migration `d8f1a5c37b92`) acompanha esse par. Sem ele o
+banco ordena o Chat inteiro para devolver cinquenta linhas, a cada página, e pior exatamente nas
+threads longas que tornaram a paginação necessária.
+
+### `GET /chats/{id}/messages?before=<cursor>&limit=<n>`
+
+A resposta deixou de ser um array e passou a ser `{"messages": [...], "next_cursor": "..."}`. O cursor
+é parte da resposta, não metadado sobre ela: sem ele a resposta não diz se há mais thread acima, e
+`next_cursor: null` é a única coisa que significa "você chegou ao começo".
+
+A busca anda **de trás para frente** e a resposta vem **de frente para trás**: uma thread abre no que foi
+dito por último, então a página é encontrada a partir do fim e revertida antes de sair — desfazer a
+caminhada não é trabalho de cada cliente. `before` nomeia uma linha, não uma contagem: a comparação é de
+tupla contra o mesmo par da ordenação, então a página retoma exatamente na linha onde a anterior parou,
+por mais mensagens que tenham chegado acima. É isso que um offset não consegue fazer, e é o que um chat
+garante que vai ser testado.
+
+Busca-se **uma linha a mais** do que o pedido e descarta-se. Essa linha sobrando é como a resposta sabe se
+manda cursor: sem ela, chegar ao começo e parar exatamente nele são indistinguíveis, e o cliente fica com
+um cursor que não traz nada e sem saber que acabou.
+
+O cursor é opaco de propósito (`app/core/cursor.py`): entregue como timestamp e identificador legíveis,
+clientes montam o próprio, e aí a ordenação nunca mais muda sem quebrá-los. Base64 aqui não é segredo e
+não pretende ser — é um formato que diz "isto veio de nós, devolva sem alterar". Um cursor que o serviço
+não emitiu é **recusado com 422**, não tratado como "sem cursor": responder o topo da thread a uma posição
+de rolagem corrompida, em silêncio, é indistinguível de ter realmente chegado ao começo.
+
+### `POST /chats/{id}/read`
+
+`{"read_at": "...", "message_id": "..."}`, com `message_id` opcional. A marca d'água é um instante **e**
+uma mensagem: o instante é do que a contagem de não lidas é calculada, a mensagem é onde um cliente
+reancora a rolagem. `message_id` é opcional porque quem leu um Chat vazio não tem mensagem para apontar.
+
+**O `read_at` é grampeado em `now()`.** Ele vem do relógio do chamador porque só ele sabe quando olhou —
+e é exatamente por isso: um aparelho um dia adiantado marcaria como lido tudo que fosse dito nas
+próximas vinte e quatro horas, e o estado de não lidas do Chat não voltaria até o desvio passar, em
+silêncio. Um `read_at` **sem fuso é recusado com 422**, pelo mesmo argumento do cursor: um timestamp sem
+fuso não nomeia instante nenhum, e adivinhar erra pelo offset do chamador ou pelo do servidor.
+
+**A marca d'água só anda para frente.** Dois clientes numa conta é o caso comum — um celular no fim da
+thread, um laptop rolado para cima — e sem isso quem marca por último ganha, a contagem volta, e o Chat
+re-notifica por mensagens que a pessoa já leu. As duas metades andam juntas ou nenhuma: guardar o
+instante e pegar a mensagem mais antiga deixaria um Participant cujo estado de leitura diz duas coisas
+diferentes. A regra inteira é `advanced_to`, função pura sobre três instantes.
+
+A `message_id` nomeada passa pelo **mesmo filtro de visibilidade** de qualquer leitura (`visible_to`).
+Sem isso o endpoint é um oráculo: um cliente final percorre identificadores, vê quais são aceitos, e
+aprende quais Staff-only Messages existem sem nunca ver uma. Responde 404, como toda mensagem que ele
+não pode ler.
+
+A resposta é o estado **gravado**, não o eco do pedido — o grampo e a monotonia podem mudá-lo, e um
+cliente que assumisse o próprio pedido mostraria uma contagem que o serviço não confirma.
+
+### A posição também é legível
+
+`GET /chats` carrega `last_read_at` e `last_read_message_id` além de `unread_count`. A contagem diz
+**quanto** está acima da marca d'água; só esses dois dizem **onde** ela está — e quem pergunta é um
+cliente que não fez o `POST /read` que a moveu: um que voltou de uma reconexão, ou um segundo aparelho.
+Null nos dois é resposta de verdade, e diferente de zero: é quem não leu nada ali, por oposição a quem
+leu a primeira mensagem.
+
+A âncora **segue o instante**. Uma marcação que não move a marca d'água não move nenhuma das duas
+metades; uma que move e **não nomeia mensagem** mantém a âncora anterior em vez de apagá-la — nomear é
+opcional, e um cliente que só tem relógio manda só o relógio. Consequência aceita: uma marcação no
+**mesmo instante** nomeando outra mensagem não mexe na âncora, porque não há instante novo para
+ancorar. O caso é estreito (`created_at` é `clock_timestamp()`, resolução de microssegundo) e a
+alternativa seria comparar posições na ordem total a cada marcação.
+
+### `unread_count` em cada Chat
+
+`GET /chats` passou a carregar `unread_count`. São três condições, e todas as três estão no JOIN
+(`unread_counts`, `app/services/chat.py`) — a contagem é resposta do banco, não lista filtrada aqui:
+
+1. chegou depois da marca d'água **daquele** Participant, que vem da linha dele (os limiares diferem por
+   pessoa, então a marca é juntada e não passada como parâmetro);
+2. **outra pessoa** disse: enviar é ter lido. Sem isso, um Chat sem resposta fica na lista de quem
+   mandou com um badge pelas próprias mensagens;
+3. aquele Participant **pode** ler: é o que mantém uma Staff-only Message fora da contagem do cliente
+   final. Ele não é informado de que existe uma, e um badge subindo por uma mensagem que ele nunca verá
+   avisa que ela está lá.
+
+Chats são agrupados por conjunto de visibilidades, como em `get_last_message_at_by_chat`: um leitor tem
+no máximo um conjunto por tipo de Chat, então o OR fica com dois ramos por mais longa que seja a lista.
+O JOIN é externo e a resposta cobre todo Participant perguntado, inclusive os com nada a ler — chave
+ausente significaria "ninguém falou aqui", tradução que um dos dois call sites esqueceria.
+
+O push da lista por WebSocket carrega a mesma contagem. Ele continua agrupado por papel para o
+`last_message_at`, mas a contagem é por pessoa: uma query por papel responde por todas as pessoas dele,
+então o custo segue sendo um agregado por papel, não um por Participant.
+
+
 ## Staff-only Message
 
 Uma **Staff-only Message** é uma mensagem dentro de um Client Chat visível só para os Participants da Company. O cliente final não a recebe e não descobre que ela existe.
@@ -417,6 +521,8 @@ O piso que substitui o queryset é `app/core/company_scope.py`:
 - O canal de lista de chats do Redis é `user:{company_id}:{user_id}`, não `user:{user_id}`. O mesmo id de usuário pode existir em duas Companies, e o resumo de Chat empurrado por `/websocket/users/me` carrega id, nome e participantes — chaveado só por usuário, ele cairia no socket aberto com o token da outra Company.
 - O filtro cai no `WHERE`, então uma linha de outra Company não é proibida, é **ausente**: um pedido cruzando a fronteira e um pedido por algo que nunca existiu devolvem `404` com o mesmo corpo, e nada na resposta distingue os dois.
 
+**Um lado de JOIN não é visto pelo teste estrutural.** `unread_counts` (`app/services/chat.py`) nasce de `scope.select(Participant)` — então o `Participant` está coberto — mas o `Message` entra por `outerjoin`, e a condição do join é invisível para uma varredura que reconhece escopo pela grafia do receptor. Por isso o `Message.company_id == scope.company_id` está escrito à mão lá dentro, com comentário dizendo por quê, e por isso `test_the_unread_count_does_not_cross_company` verifica pela borda: os dois lados de um join precisam responder à fronteira, e só a entidade que `scope.select` recebeu carrega isso sozinha.
+
 As exceções do teste estrutural são nomeadas **por entidade**, não por arquivo: `app/services/outbox.py` pode ler `OutboxEvent` e só isso, porque o drain não tem chamador, nem token, nem Company — e é seguro porque a Company já foi decidida dentro do endereço quando a linha foi escrita. Um `select(Chat)` crescendo dentro do drain continua sendo apontado.
 
 `tests/test_company_isolation.py` cobre cada caminho de leitura e, por último, faz um teste estrutural: ele varre a AST de todo o `app/` atrás de `select(E)`, `sa.select(E)`, `session.get(E, ...)`/`get_one` e `session.query(E)` sobre uma entidade escopada fora do módulo de escopo, e falha apontando arquivo e linha. O conjunto de entidades escopadas sai do registry do SQLAlchemy, não de uma lista escrita à mão, então uma entidade nova entra na varredura assim que é mapeada.
@@ -449,10 +555,10 @@ Não bloqueia o funcionamento hoje, mas seria o primeiro ponto de atenção ante
   mas `participants` não guarda quem adicionou nem quem removeu — nesses dois comandos o `X-Acting-User`
   continua sendo só condição para passar.
 - **O drain não existe fora do `docker-compose.yml`.** `infra/` define uma task definition e um service, ambos `backend`. Um deploy sem o processo de drain armazena tudo e entrega nada em tempo real, em silêncio. Ticket 20.
-- **Índice de `messages` favorece a query errada.** A constraint de unicidade do ticket 08 criou um btree liderado por `chat_id`, então `list_messages` e a busca da última mensagem por chat deixaram de ser table scan. O que ainda falta é o `created_at`: o índice é `(chat_id, sender_id, client_message_id)`, serve ao filtro e não à ordenação, então o Postgres continua ordenando o resultado à parte — e é essa ordenação que o cursor do ticket 09 vai percorrer.
+- ~~**Índice de `messages` favorece a query errada.**~~ *(Resolvido no ticket 09: `ix_messages_chat_id_created_at_id`, migration `d8f1a5c37b92`, é `(chat_id, created_at, id)` — o par que o cursor percorre. A constraint de unicidade do ticket 08 continua servindo ao filtro de retry; o que faltava era a ordenação, que o Postgres fazia à parte a cada página.)*
 - **Índice de `participants` favorece a query errada.** O `UniqueConstraint(chat_id, user_id)` serve bem a checagem de membership, mas `list_chats` — chamada a cada carregamento da sidebar — filtra só por `user_id`; faltaria um índice dedicado liderado por esse campo.
 - **Sem rate limiting** em `/webhook/messages`.
-- **Sem paginação** em nenhuma listagem (`GET /chats`, `GET /chats/{id}/messages`) — todas devolvem o conjunto inteiro.
+- **`GET /chats` ainda devolve o conjunto inteiro.** `GET /chats/{id}/messages` pagina por cursor desde o ticket 09; a lista de Chats não, e é o ticket 10 que a pagina pelo mesmo contrato de cursor, junto com o filtro por nome de participante.
 - **Zero logging estruturado** em todo o `app/` — combinado com o subscriber Redis sem tratamento de falha (acima), é o ponto mais arriscado de operar isso em produção sem visibilidade.
 
 ## Migrations

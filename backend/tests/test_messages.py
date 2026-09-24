@@ -69,9 +69,9 @@ async def test_participant_can_list_messages_in_order(db_session: AsyncSession):
     first = await _send(db_session, sender, chat.id, "first")
     second = await _send(db_session, other, chat.id, "second")
 
-    messages = await _list(db_session, sender, chat.id)
+    page = await _list(db_session, sender, chat.id)
 
-    assert [m.id for m in messages] == [first.id, second.id]
+    assert [m.id for m in page.messages] == [first.id, second.id]
 
 
 async def test_non_participant_cannot_list_messages(db_session: AsyncSession):

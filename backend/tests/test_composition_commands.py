@@ -343,7 +343,9 @@ async def test_removing_a_participant_takes_them_out_of_the_chat(client: AsyncCl
     assert removed.json()["participant_user_ids"] == [actor_id]
     assert listed_by_the_removed.json() == []
     assert read_after_removal.status_code == 404
-    assert [message["body"] for message in still_read_by_the_rest.json()] == ["até mais"]
+    assert [message["body"] for message in still_read_by_the_rest.json()["messages"]] == [
+        "até mais"
+    ]
 
 
 async def test_removing_someone_twice_does_not_move_when_they_left(client: AsyncClient):
@@ -396,7 +398,9 @@ async def test_someone_removed_can_be_put_back_and_reads_what_was_said_meanwhile
 
     assert back.status_code == 200
     assert set(back.json()["participant_user_ids"]) == {actor_id, other_id}
-    assert [message["body"] for message in read_after_returning.json()] == ["enquanto isso"]
+    assert [message["body"] for message in read_after_returning.json()["messages"]] == [
+        "enquanto isso"
+    ]
 
 
 async def test_every_command_route_refuses_without_the_service_credential(client: AsyncClient):
@@ -569,7 +573,7 @@ async def test_composition_failing_leaves_existing_chats_sending_and_receiving(
 
     assert composition.status_code == 401
     assert sent.status_code == 201
-    assert [message["body"] for message in read.json()] == ["seguimos"]
+    assert [message["body"] for message in read.json()["messages"]] == ["seguimos"]
 
 
 async def test_the_chat_records_the_user_it_was_composed_for(

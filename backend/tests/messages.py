@@ -39,4 +39,4 @@ async def bodies(client: AsyncClient, chat_id: str, headers: dict[str, str]) -> 
     """What this reader sees in the Chat, in order — the backlog's usual assertion."""
     response = await client.get(f"/chats/{chat_id}/messages", headers=headers)
     assert response.status_code == 200
-    return [message["body"] for message in response.json()]
+    return [message["body"] for message in response.json()["messages"]]

@@ -73,7 +73,7 @@ async def test_message_list_does_not_cross_company(client: AsyncClient):
         f"/chats/{uuid.uuid4()}/messages", headers=bearer(token_b_in_y)
     )
 
-    assert len(inside.json()) == 1
+    assert len(inside.json()["messages"]) == 1
     assert outside.status_code == 404
     assert (outside.status_code, outside.json()) == (
         never_existed.status_code,
@@ -294,6 +294,40 @@ async def test_sending_into_another_companys_chat_is_refused(client: AsyncClient
     )
 
 
+
+async def test_the_unread_count_does_not_cross_company(client: AsyncClient):
+    """The newest aggregate is a read path too, and it is the one built by hand.
+
+    `unread_counts` is constructed over `Participant`, so only that side gets
+    the Company filter from `scope.select`; the `Message` side is joined and
+    scoped by hand. The structural guard recognises scope by the receiver's
+    spelling and cannot see a join condition, so it would wave that through —
+    which is exactly why this is asserted from the edge.
+
+    The same user id in two Companies is what makes the failure visible. A
+    count that summed both would not leak a message, a name or a Chat: it would
+    leak *how much is being said* in a Company the caller has no token for, in
+    a number nothing else on the response explains.
+    """
+    company_x = uuid.uuid4()
+    company_y = uuid.uuid4()
+    user_b_id = uuid.uuid4()
+    _, token_a_in_x = caller_token(company_id=company_x)
+    _, token_c_in_y = caller_token(company_id=company_y)
+    _, token_b_in_y = caller_token(user_id=user_b_id, company_id=company_y)
+
+    in_x = await open_chat(client, bearer(token_a_in_x), str(user_b_id))
+    in_y = await open_chat(client, bearer(token_c_in_y), str(user_b_id))
+    for _ in range(3):
+        await say(client, in_x.json()["id"], bearer(token_a_in_x), "do outro lado")
+    await say(client, in_y.json()["id"], bearer(token_c_in_y), "daqui")
+
+    listed = (await client.get("/chats", headers=bearer(token_b_in_y))).json()
+
+    assert [(chat["id"], chat["unread_count"]) for chat in listed] == [
+        (in_y.json()["id"], 1)
+    ]
+
 async def test_websocket_does_not_open_on_another_companys_chat(client: AsyncClient):
     company_x = uuid.uuid4()
     company_y = uuid.uuid4()
@@ -423,4 +457,6 @@ async def test_a_display_name_from_another_company_is_never_resolved(client: Asy
 
     read_by_b = await client.get(f"/chats/{chat_id}/messages", headers=bearer(token_b_in_x))
 
-    assert [message["sender_display_name"] for message in read_by_b.json()] == ["Carla Dias"]
+    assert [message["sender_display_name"] for message in read_by_b.json()["messages"]] == [
+        "Carla Dias"
+    ]

@@ -2,7 +2,16 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint, Uuid, func
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+    Uuid,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.company_scope import CompanyScoped
@@ -30,6 +39,15 @@ class Message(Base, CompanyScoped):
             "sender_id",
             "client_message_id",
             name="uq_messages_sender_client_message_id",
+        ),
+        # The pair the cursor pages on, with the Chat it pages within. Declared
+        # here as well as in the migration, because a model that does not carry
+        # its own indexes makes every future autogenerate propose dropping them.
+        Index(
+            "ix_messages_chat_id_created_at_id",
+            "chat_id",
+            "created_at",
+            "id",
         ),
     )
 

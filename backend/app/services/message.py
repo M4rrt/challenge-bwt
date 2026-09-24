@@ -2,18 +2,20 @@ import uuid
 from collections.abc import Sequence
 from datetime import datetime, timezone
 
-from sqlalchemy import ColumnElement
+from sqlalchemy import ColumnElement, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.chat_token import Caller
 from app.core.company_scope import CompanyScope
+from app.core.cursor import decode_cursor, encode_cursor
 from app.core.message_visibility import may_read, readable_visibilities
 from app.models.chat import STILL_IN_THE_CHAT, Chat, Participant
 from app.models.message import Message, MessageVisibility
 from app.schemas.message import (
     MessageCreate,
     MessageDelete,
+    MessagePage,
     MessageRead,
     WebhookMessageCreate,
 )
@@ -21,6 +23,40 @@ from app.services.chat import ChatNotFoundError, enqueue_chat_summaries
 from app.services.identity import profiles_by_user_id
 from app.services.outbox import enqueue
 from app.services.realtime import Address, address_for_chat, address_for_chat_staff
+
+
+OLDEST_FIRST = (Message.created_at, Message.id)
+"""The total order a Chat's messages are read in, spelled once.
+
+`created_at` alone is a partial order: two messages the clock cannot separate
+share an instant, and their relative order is then whatever the plan happens to
+produce — which can differ between two reads of the same rows.
+
+That is not merely untidy, because the cursor pages over exactly this order. A
+pair that sorts one way on one page and the other way on the next is a message
+skipped or a message served twice. The identifier is the tiebreaker: arbitrary,
+since a v4 uuid says nothing about time, but total and stable, which is the
+whole of what a cursor needs. Every read of a Chat's history orders by this
+tuple, so the ordering and the cursor cannot come to disagree.
+"""
+
+NEWEST_FIRST = tuple(column.desc() for column in OLDEST_FIRST)
+"""The same order, walked from the end — which is where a chat is read from.
+
+A thread opens on what was said last, so the page has to be found by walking
+backwards. Derived from `OLDEST_FIRST` rather than written out, because the two
+directions disagreeing on the tiebreaker is exactly the bug the tiebreaker was
+added to prevent.
+"""
+
+DEFAULT_PAGE_LIMIT = 50
+MAX_PAGE_LIMIT = 200
+"""How much history one request may ask for, with and without saying so.
+
+The ceiling is what keeps the cursor from being decorative: a client that can
+ask for everything in one page never pages, and the first Chat with a year in it
+is a request nothing bounded.
+"""
 
 
 class VisibilityNotAllowedError(Exception):
@@ -149,13 +185,14 @@ async def _message_already_sent(
     )
 
 
-def _visible_to(caller: Caller, chat: Chat) -> ColumnElement[bool]:
+def visible_to(caller: Caller, chat: Chat) -> ColumnElement[bool]:
     """The WHERE clause for "a Message this caller may read in this Chat".
 
     Four arguments that always travel together, asked of the one predicate and
-    turned into a filter in one place. Reading and deleting both go through it,
-    so nothing is deletable that was not readable — and ADR-0008's defect, the
-    rule evaluated in more than one place, has one fewer place to come back in.
+    turned into a filter in one place. Reading, deleting and marking as read all
+    go through it, so nothing is deletable or nameable that was not readable —
+    and ADR-0008's defect, the rule evaluated in more than one place, has one
+    fewer place to come back in.
     """
     return Message.visibility.in_(
         readable_visibilities(
@@ -336,7 +373,7 @@ async def delete_message(
         scope.select(Message).where(
             Message.id == message_id,
             Message.chat_id == chat_id,
-            _visible_to(caller, chat),
+            visible_to(caller, chat),
         )
     )
     if message is None:
@@ -357,16 +394,71 @@ async def delete_message(
 
 
 async def list_messages(
-    db: AsyncSession, scope: CompanyScope, caller: Caller, chat_id: uuid.UUID
-) -> list[MessageRead]:
+    db: AsyncSession,
+    scope: CompanyScope,
+    caller: Caller,
+    chat_id: uuid.UUID,
+    *,
+    before: str | None = None,
+    limit: int = DEFAULT_PAGE_LIMIT,
+) -> MessagePage:
+    """A page of this Chat's history: the newest one, or the one before a cursor.
+
+    It knows nothing about the caller's watermark. Where somebody stopped
+    reading is a separate fact, kept on their Participant row, and a thread that
+    opened on it rather than on the newest page would open scrolled up.
+
+    The walk is backwards and the answer is forwards. A thread opens on what was
+    said last, so the page has to be found from the end; it is then reversed,
+    because that is the order it is read in and undoing the walk is not every
+    client's job.
+
+    `before` is a row, not a count. The comparison is a row comparison against
+    the same pair the order is taken on, so the page resumes at exactly the row
+    the last one ended on however many messages have arrived above it — which is
+    the one thing an offset cannot do, and the one thing a chat guarantees will
+    be tested.
+
+    One more row than asked for is fetched and then dropped. That extra row is
+    the whole of how the response knows whether to send a cursor: without it,
+    reaching the beginning and landing exactly on it are indistinguishable, and
+    the client is left with a cursor that fetches nothing and no way to know it
+    has finished until it has asked.
+
+    Visibility is applied here as it is everywhere else, so a Staff-only Message
+    is not merely omitted from an end client's page — it is not in the sequence
+    the cursor walks at all, and the page it would have been in is a full page of
+    the messages they may read rather than one with a hole in it.
+    """
     chat = await chat_of_participant(db, scope, chat_id, caller.id)
 
-    result = await db.scalars(
+    walking_back = (
         scope.select(Message)
         .where(
             Message.chat_id == chat_id,
-            _visible_to(caller, chat),
+            visible_to(caller, chat),
         )
-        .order_by(Message.created_at)
+        .order_by(*NEWEST_FIRST)
+        .limit(limit + 1)
     )
-    return await message_responses(db, scope, list(result.all()))
+    if before is not None:
+        cursor = decode_cursor(before)
+        walking_back = walking_back.where(
+            tuple_(Message.created_at, Message.id)
+            < tuple_(cursor.created_at, cursor.id)
+        )
+
+    found = list((await db.scalars(walking_back)).all())
+    page = found[:limit]
+    # Read off the oldest row of the page before reversing, which is where the
+    # page before this one resumes from.
+    next_cursor = (
+        encode_cursor(page[-1].created_at, page[-1].id)
+        if page and len(found) > limit
+        else None
+    )
+    page.reverse()
+
+    return MessagePage(
+        messages=await message_responses(db, scope, page), next_cursor=next_cursor
+    )
