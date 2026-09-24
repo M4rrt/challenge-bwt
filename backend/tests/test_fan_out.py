@@ -15,6 +15,7 @@ from app.main import app
 from app.services.outbox import drain_once
 from tests.chat_tokens import bearer, caller_token
 from tests.chats import open_chat_of
+from tests.messages import say
 
 
 async def test_a_staff_only_message_reaches_the_staff_socket_and_not_the_end_clients(
@@ -51,11 +52,7 @@ async def test_a_staff_only_message_reaches_the_staff_socket_and_not_the_end_cli
             aconnect_ws(f"/websocket/chats/{chat_id}?token={token_c}", client=ws_client) as buyer,
         ):
             for body, visibility in (("um", "all"), ("segredo", "staff_only"), ("dois", "all")):
-                await client.post(
-                    f"/chats/{chat_id}/messages",
-                    json={"body": body, "visibility": visibility},
-                    headers=headers_a,
-                )
+                await say(client, chat_id, headers_a, body, visibility=visibility)
             await drain_once(db_session)
 
             staff_saw = [(await staff.receive_json(timeout=5))["body"] for _ in range(3)]

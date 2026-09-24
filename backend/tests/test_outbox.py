@@ -19,6 +19,7 @@ from app.services.outbox import drain_once, oldest_unpublished_age
 from app.services.realtime import address_for_chat, address_for_user
 from tests.chat_tokens import DEFAULT_COMPANY_ID, bearer, caller_token
 from tests.chats import open_chat_id
+from tests.messages import say
 
 
 async def _pending(db: AsyncSession) -> list[OutboxEvent]:
@@ -44,9 +45,7 @@ async def test_sending_a_message_enqueues_it_for_the_chat_and_for_each_participa
     user_b_id, _ = caller_token()
     chat_id = await open_chat_id(client, headers_a, user_b_id)
 
-    await client.post(
-        f"/chats/{chat_id}/messages", json={"body": "oi"}, headers=headers_a
-    )
+    await say(client, chat_id, headers_a, "oi")
 
     addresses = {row.address for row in await _pending(db_session)}
 
@@ -78,9 +77,7 @@ async def test_a_send_that_fails_midway_leaves_neither_the_message_nor_its_annou
     monkeypatch.setattr("app.services.message.enqueue_chat_summaries", fails)
 
     with pytest.raises(RuntimeError):
-        await client.post(
-            f"/chats/{chat_id}/messages", json={"body": "nunca aconteceu"}, headers=headers_a
-        )
+        await say(client, chat_id, headers_a, "nunca aconteceu")
     await db_session.rollback()
 
     backlog = await client.get(f"/chats/{chat_id}/messages", headers=headers_a)
@@ -106,9 +103,7 @@ async def test_a_drain_that_dies_mid_batch_delivers_the_rest_on_its_next_run(
     await drain_once(db_session)
 
     for body in ("um", "dois", "três"):
-        await client.post(
-            f"/chats/{chat_id}/messages", json={"body": body}, headers=headers_a
-        )
+        await say(client, chat_id, headers_a, body)
     enqueued = len(await _pending(db_session))
 
     published: list[str] = []
@@ -153,9 +148,7 @@ async def test_the_age_of_the_oldest_unpublished_row_is_observable(
     await drain_once(db_session)
     owed_nothing = await oldest_unpublished_age(db_session)
 
-    await client.post(
-        f"/chats/{chat_id}/messages", json={"body": "oi"}, headers=headers_a
-    )
+    await say(client, chat_id, headers_a, "oi")
     owed_again = await oldest_unpublished_age(db_session)
 
     assert owed is not None and owed >= timedelta(0)
@@ -186,9 +179,7 @@ async def test_what_a_request_enqueues_survives_the_end_of_that_request(
     await db_session.rollback()
     after_creating = await _pending(db_session)
 
-    await client.post(
-        f"/chats/{chat_id}/messages", json={"body": "oi"}, headers=headers_a
-    )
+    await say(client, chat_id, headers_a, "oi")
     await db_session.rollback()
     after_sending = await _pending(db_session)
 

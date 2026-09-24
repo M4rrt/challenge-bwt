@@ -327,6 +327,57 @@ uv run pytest
 
 As respostas de `Chat` retornam participantes ordenados por `user_id`, e essa ordenação é um `order_by` explícito no relacionamento, não um efeito colateral do plano de execução do Postgres — a distinção custou o RED de um teste de regressão do ticket 23, que passava mesmo sem o fix pretendido. `tests/test_chat_model.py` falha se o `order_by` sair.
 
+## Enviar e apagar mensagens
+
+`POST /chats/{id}/messages` exige `client_message_id`, um identificador que o cliente gera
+**antes de enviar** e repete quando reenvia. Não tem default: um envio sem ele é recusado com 422,
+em vez de ser gravado com nulo. A diferença importa porque um cliente que desistiu da garantia de
+retry e um que esqueceu o campo seriam indistinguíveis — e só um dos dois descobre isso depois, como
+uma duplicata do que a pessoa falou uma vez só.
+
+A unicidade é `(chat_id, sender_id, client_message_id)`, constraint no banco. Ter o `sender_id`
+dentro dela é o que deixa dois clientes diferentes usarem o mesmo valor sem colidir: o identificador
+é do cliente, então ele só é único para aquele cliente, e juntar os dois engoliria em silêncio a
+mensagem da segunda pessoa.
+
+**O caminho da repetição é o caminho da recusa.** `_persist_and_announce` tenta o INSERT, e é o
+`IntegrityError` que leva à busca pela mensagem original — não há consulta antes. Uma consulta antes
+seria uma segunda opinião sobre uma corrida que o banco já está decidindo: duas cópias do mesmo retry
+chegando juntas não achariam nada, ambas inseririam, e alguém ainda teria que tratar isso aqui. Com
+um caminho só, o retry sequencial comum já exercita o mesmo código que a corrida.
+
+O retry responde 201 com a mensagem original, não 409. Um cliente que nunca viu a primeira resposta
+não tem como distinguir os dois casos, e um erro só o empurraria a decidir se tenta de novo. E a
+resposta é montada a partir da **linha gravada**, não do que o retry trouxe: um reenvio com o corpo
+alterado não vira um endpoint de edição que ninguém desenhou. O retry também sai antes do outbox e do
+push da lista — reanunciar mexeria a lista de Chats de todo mundo por uma mensagem que já está lá.
+
+### Apagar marca, não remove
+
+`DELETE /chats/{chat_id}/messages/{message_id}`, com `{"reason": "..."}` opcional. A linha fica: o
+corpo é esvaziado e a exclusão é registrada em `deleted_at`, `deleted_by_user_id` e `deletion_reason`.
+
+Duas coisas dependem da linha continuar existindo. A constraint de unicidade: apagar de verdade faria
+o próximo retry do autor **escrever a mensagem de novo**, desfazendo a exclusão em nome dele —
+`tests/test_message_send_semantics.py` prende exatamente isso. E o cursor do ticket 09, que pagina
+sobre as linhas e moveria a fronteira de quem já rolou além dela.
+
+A resposta e o fan-out mandam o marcador: corpo vazio e `deleted_at` preenchido. Quem apagou e por quê
+ficam **na linha e fora da resposta** — o que interessa à thread é que algo foi retirado; o resto é
+para quem perguntar depois. O `reason` é opcional porque apagar o próprio erro de digitação não deve
+satisfação a ninguém, e exigi-lo só encheria a coluna de ponto final. O que todo tombstone carrega é o
+autor.
+
+Só o autor apaga, e essa é a única refusa do serviço que é **403 e não 404**. A regra 404-não-403 de
+`docs/decisions.md` existe para não confirmar que um Chat existe a quem está fora dele; aqui quem pede
+está dentro e já leu a mensagem, então não sobra nada para esconder e o 404 seria só mentira sobre o
+motivo. Já uma mensagem endereçada a um conjunto do qual o leitor não faz parte volta como 404: ela
+passa pelos mesmos dois filtros da leitura, e distinguir "não é sua para ver" de "não existe" deixaria
+enumerar as Staff-only Messages de um Chat pedindo para apagar identificador por identificador.
+
+O tombstone sai no mesmo endereço em que a mensagem foi anunciada (`_address_of`), então quem viu é
+exatamente quem é avisado — o cliente final nunca é informado de que sumiu algo que ele não podia nomear.
+
 ## Staff-only Message
 
 Uma **Staff-only Message** é uma mensagem dentro de um Client Chat visível só para os Participants da Company. O cliente final não a recebe e não descobre que ela existe.
@@ -398,7 +449,7 @@ Não bloqueia o funcionamento hoje, mas seria o primeiro ponto de atenção ante
   mas `participants` não guarda quem adicionou nem quem removeu — nesses dois comandos o `X-Acting-User`
   continua sendo só condição para passar.
 - **O drain não existe fora do `docker-compose.yml`.** `infra/` define uma task definition e um service, ambos `backend`. Um deploy sem o processo de drain armazena tudo e entrega nada em tempo real, em silêncio. Ticket 20.
-- **Sem índice em `messages.chat_id`.** Nenhuma migração cria esse índice — `list_messages` (filtra por `chat_id`, ordena por `created_at`) e a busca da última mensagem por chat fazem table scan à medida que o histórico cresce.
+- **Índice de `messages` favorece a query errada.** A constraint de unicidade do ticket 08 criou um btree liderado por `chat_id`, então `list_messages` e a busca da última mensagem por chat deixaram de ser table scan. O que ainda falta é o `created_at`: o índice é `(chat_id, sender_id, client_message_id)`, serve ao filtro e não à ordenação, então o Postgres continua ordenando o resultado à parte — e é essa ordenação que o cursor do ticket 09 vai percorrer.
 - **Índice de `participants` favorece a query errada.** O `UniqueConstraint(chat_id, user_id)` serve bem a checagem de membership, mas `list_chats` — chamada a cada carregamento da sidebar — filtra só por `user_id`; faltaria um índice dedicado liderado por esse campo.
 - **Sem rate limiting** em `/webhook/messages`.
 - **Sem paginação** em nenhuma listagem (`GET /chats`, `GET /chats/{id}/messages`) — todas devolvem o conjunto inteiro.

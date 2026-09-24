@@ -24,6 +24,7 @@ from app.db import Base
 from app.services.projection_health import projection_lag
 from tests.chats import acting_for, identity, open_chat
 from tests.chat_tokens import DEFAULT_COMPANY_ID, bearer, caller_token
+from tests.messages import say
 from tests.identities import (
     a_chat_with_one_message,
     bulk_load,
@@ -172,9 +173,7 @@ async def test_adding_a_participant_teaches_the_projection_their_name(
         },
         headers=acting_for(user_a_id, str(DEFAULT_COMPANY_ID)),
     )
-    await client.post(
-        f"/chats/{chat_id}/messages", json={"body": "cheguei"}, headers=bearer(token_c)
-    )
+    await say(client, chat_id, bearer(token_c), "cheguei")
 
     read_by_b = await client.get(f"/chats/{chat_id}/messages", headers=bearer(token_b))
 

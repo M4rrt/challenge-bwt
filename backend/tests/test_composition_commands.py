@@ -27,6 +27,7 @@ from app.services.outbox import drain_once
 
 from tests.chat_tokens import DEFAULT_COMPANY_ID, bearer, caller_token
 from tests.chats import acting_for, identity, service_credential
+from tests.messages import say
 
 
 async def _command(
@@ -328,9 +329,7 @@ async def test_removing_a_participant_takes_them_out_of_the_chat(client: AsyncCl
     chat_id = (
         await _command(client, identity(actor_id), identity(other_id), acting_user_id=actor_id)
     ).json()["id"]
-    await client.post(
-        f"/chats/{chat_id}/messages", json={"body": "até mais"}, headers=bearer(other_token)
-    )
+    await say(client, chat_id, bearer(other_token), "até mais")
 
     removed = await _remove(client, chat_id, other_id, acting_user_id=actor_id)
 
@@ -388,9 +387,7 @@ async def test_someone_removed_can_be_put_back_and_reads_what_was_said_meanwhile
         await _command(client, identity(actor_id), identity(other_id), acting_user_id=actor_id)
     ).json()["id"]
     await _remove(client, chat_id, other_id, acting_user_id=actor_id)
-    await client.post(
-        f"/chats/{chat_id}/messages", json={"body": "enquanto isso"}, headers=bearer(actor_token)
-    )
+    await say(client, chat_id, bearer(actor_token), "enquanto isso")
 
     back = await _add(client, chat_id, identity(other_id), acting_user_id=actor_id)
     read_after_returning = await client.get(
@@ -567,9 +564,7 @@ async def test_composition_failing_leaves_existing_chats_sending_and_receiving(
         json={"type": "staff", "name": None, "participants": [identity(actor_id)]},
         headers={"X-Acting-User": actor_id, "X-Acting-Company": str(DEFAULT_COMPANY_ID)},
     )
-    sent = await client.post(
-        f"/chats/{chat_id}/messages", json={"body": "seguimos"}, headers=bearer(actor_token)
-    )
+    sent = await say(client, chat_id, bearer(actor_token), "seguimos")
     read = await client.get(f"/chats/{chat_id}/messages", headers=bearer(other_token))
 
     assert composition.status_code == 401

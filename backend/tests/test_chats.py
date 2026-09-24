@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.chat import Participant
 from tests.chats import open_chat
 from tests.chat_tokens import bearer, caller_token
+from tests.messages import say
 
 
 async def test_create_one_to_one_chat(client: AsyncClient):
@@ -106,11 +107,7 @@ async def test_list_chats_reflects_most_recent_message_timestamp(
     create_response = await open_chat(client, headers_a, user_b_id)
     chat_id = create_response.json()["id"]
 
-    send_response = await client.post(
-        f"/chats/{chat_id}/messages",
-        json={"body": "oi"},
-        headers=headers_a,
-    )
+    send_response = await say(client, chat_id, headers_a, "oi")
     message_created_at = send_response.json()["created_at"]
 
     response = await client.get("/chats", headers=headers_a)
@@ -127,22 +124,14 @@ async def test_list_chats_orders_by_most_recent_message_first(client: AsyncClien
 
     older_response = await open_chat(client, headers_a, user_b_id)
     older_id = older_response.json()["id"]
-    await client.post(
-        f"/chats/{older_id}/messages",
-        json={"body": "mensagem antiga"},
-        headers=headers_a,
-    )
+    await say(client, older_id, headers_a, "mensagem antiga")
 
     no_messages_response = await open_chat(client, headers_a, user_c_id, name="Sem mensagens")
     no_messages_id = no_messages_response.json()["id"]
 
     newer_response = await open_chat(client, headers_a, user_b_id, user_c_id, name="Recente")
     newer_id = newer_response.json()["id"]
-    await client.post(
-        f"/chats/{newer_id}/messages",
-        json={"body": "mensagem recente"},
-        headers=headers_a,
-    )
+    await say(client, newer_id, headers_a, "mensagem recente")
 
     response = await client.get("/chats", headers=headers_a)
 
@@ -279,9 +268,7 @@ async def test_a_participant_who_left_is_no_longer_a_current_participant(
     still_in = await client.get("/chats", headers=bearer(token_a))
     left = await client.get("/chats", headers=bearer(token_b))
     reading_after_leaving = await client.get(f"/chats/{chat_id}/messages", headers=bearer(token_b))
-    writing_after_leaving = await client.post(
-        f"/chats/{chat_id}/messages", json={"body": "ainda aqui?"}, headers=bearer(token_b)
-    )
+    writing_after_leaving = await say(client, chat_id, bearer(token_b), "ainda aqui?")
 
     assert still_in.json()[0]["participant_user_ids"] == [user_a_id]
     assert left.json() == []
