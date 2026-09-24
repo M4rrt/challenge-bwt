@@ -14,6 +14,7 @@ from app.core.message_visibility import readable_visibilities
 from app.models.chat import STILL_IN_THE_CHAT, Chat, ChatType, Participant, ParticipantRole
 from app.models.message import Message, MessageVisibility
 from app.schemas.chat import AddParticipantCommand, ChatCommand, ChatRead, ParticipantIdentity
+from app.services.identity import remember_identities
 from app.services.outbox import enqueue
 from app.services.realtime import address_for_user
 
@@ -155,9 +156,19 @@ async def create_chat(
         raise EmptyChatError()
     _validate_shape(command.type, command.name, roles)
 
+    # After validation, so a refused command leaves no trace of the people it
+    # named, and before the reuse lookup, so that a command reopening a 1:1
+    # still teaches the projection anybody it has not heard of yet.
+    await remember_identities(db, scope, command.participants)
+
     if len(roles) == 2:
         existing = await _find_existing_one_to_one(db, scope, set(roles), command.type)
         if existing is not None:
+            # This path used to return without committing, which was right when
+            # it wrote nothing. It writes profiles now, and a session closed
+            # with work open rolls back — so the identities the command carried
+            # would be lost exactly on the redelivery that carried them again.
+            await db.commit()
             return existing
 
     chat = Chat(
@@ -222,6 +233,13 @@ async def add_participant(
     role = _role_inside_the_company(scope, command.participant)
     user_id = command.participant.user_id
 
+    # After the Company check, so a refused command leaves no trace of the
+    # person it named, and before the early return below, so that a redelivery
+    # still teaches the projection somebody it has not heard of — whoever joins
+    # starts saying things, and a Participant the projection does not know is a
+    # Participant whose messages are signed by nobody.
+    await remember_identities(db, scope, [command.participant])
+
     participant = next((p for p in chat.participants if p.user_id == user_id), None)
     joining = participant is None or participant.left_at is not None
 
@@ -241,6 +259,11 @@ async def add_participant(
     _validate_shape(chat.type, name, roles)
 
     if not joining and name == chat.name:
+        # Nothing about the Chat changed, but the identity the command carried
+        # may still be new here, and this path writes it. A session closed with
+        # work open rolls back, so returning without committing would discard
+        # it exactly on the redelivery that carried it again.
+        await db.commit()
         return chat
 
     if participant is None:

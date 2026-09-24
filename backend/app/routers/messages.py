@@ -23,12 +23,11 @@ async def send(
     db: AsyncSession = Depends(get_db),
 ) -> MessageRead:
     try:
-        message = await send_message(db, scope, caller, chat_id, data)
+        return await send_message(db, scope, caller, chat_id, data)
     except ChatNotFoundError:
         raise HTTPException(status_code=404, detail="chat not found")
     except VisibilityNotAllowedError as refused:
         raise HTTPException(status_code=422, detail=refused.detail)
-    return MessageRead.of(message)
 
 
 @router.get("", response_model=list[MessageRead])
@@ -39,7 +38,6 @@ async def list_all(
     db: AsyncSession = Depends(get_db),
 ) -> list[MessageRead]:
     try:
-        messages = await list_messages(db, scope, caller, chat_id)
+        return await list_messages(db, scope, caller, chat_id)
     except ChatNotFoundError:
         raise HTTPException(status_code=404, detail="chat not found")
-    return [MessageRead.of(m) for m in messages]

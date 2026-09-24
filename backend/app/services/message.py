@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,6 +10,7 @@ from app.models.chat import STILL_IN_THE_CHAT, Chat, Participant
 from app.models.message import Message, MessageVisibility
 from app.schemas.message import MessageCreate, MessageRead, WebhookMessageCreate
 from app.services.chat import ChatNotFoundError, enqueue_chat_summaries
+from app.services.identity import profiles_by_user_id
 from app.services.outbox import enqueue
 from app.services.realtime import address_for_chat, address_for_chat_staff
 
@@ -62,9 +64,31 @@ async def chat_of_participant(
     return chat
 
 
+async def message_responses(
+    db: AsyncSession, scope: CompanyScope, messages: Sequence[Message]
+) -> list[MessageRead]:
+    """These Messages as responses, with every sender's name resolved in one query.
+
+    Resolution happens here rather than at each call site because a message
+    table that stored the sender's name would make an anonymisation in the
+    monolith unreachable — the name is a join, always, and this is where the
+    join is. `MessageRead.of` takes the profile without a default so that a
+    fifth call site cannot quietly send a null instead of going through here.
+    """
+    profiles = await profiles_by_user_id(
+        db, scope, (message.sender_id for message in messages if message.sender_id)
+    )
+    return [
+        MessageRead.of(
+            message, profiles.get(message.sender_id) if message.sender_id else None
+        )
+        for message in messages
+    ]
+
+
 async def _persist_and_announce(
     db: AsyncSession, scope: CompanyScope, message: Message
-) -> Message:
+) -> MessageRead:
     """The Message and everything that announces it, in one transaction.
 
     The flush is what makes that possible: it gives the row its identifier and
@@ -81,16 +105,17 @@ async def _persist_and_announce(
     await db.flush()
     await db.refresh(message)
 
+    response = (await message_responses(db, scope, [message]))[0]
     address = (
         address_for_chat_staff(message.company_id, message.chat_id)
         if message.visibility is MessageVisibility.STAFF_ONLY
         else address_for_chat(message.company_id, message.chat_id)
     )
-    enqueue(db, address, MessageRead.of(message).model_dump_json())
+    enqueue(db, address, response.model_dump_json())
     await enqueue_chat_summaries(db, scope, message.chat_id)
 
     await db.commit()
-    return message
+    return response
 
 
 async def send_message(
@@ -99,7 +124,7 @@ async def send_message(
     caller: Caller,
     chat_id: uuid.UUID,
     data: MessageCreate,
-) -> Message:
+) -> MessageRead:
     chat = await chat_of_participant(db, scope, chat_id, caller.id)
 
     if not may_read(
@@ -133,7 +158,7 @@ async def assert_chat_exists(
     return chat
 
 
-async def send_external_message(db: AsyncSession, data: WebhookMessageCreate) -> Message:
+async def send_external_message(db: AsyncSession, data: WebhookMessageCreate) -> MessageRead:
     scope = CompanyScope(company_id=data.company_id)
     chat = await assert_chat_exists(db, scope, data.chat_id)
 
@@ -151,7 +176,7 @@ async def send_external_message(db: AsyncSession, data: WebhookMessageCreate) ->
 
 async def list_messages(
     db: AsyncSession, scope: CompanyScope, caller: Caller, chat_id: uuid.UUID
-) -> list[Message]:
+) -> list[MessageRead]:
     chat = await chat_of_participant(db, scope, chat_id, caller.id)
 
     result = await db.scalars(
@@ -169,4 +194,4 @@ async def list_messages(
         )
         .order_by(Message.created_at)
     )
-    return list(result.all())
+    return await message_responses(db, scope, list(result.all()))

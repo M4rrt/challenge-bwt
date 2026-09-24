@@ -73,17 +73,20 @@ pode participar** — quem é cliente de uma Company é fato de CRM, não fato d
 espelhar a agenda de contatos e a rotatividade dela. `tests/test_composition_commands.py` falha se qualquer
 uma das duas voltar.
 
-#### As três rotas internas
+#### As três rotas de composição
 
-Todas sob `/internal`, autenticadas por `Authorization: Bearer $INTERNAL_SERVICE_TOKEN` e por **dois headers
-nomeando o usuário por quem o monolito age**:
+A ingress interna tem cinco rotas sob `/internal`: as três de composição abaixo e as duas da projeção de
+identidade, descritas em "Projeção de identidade". Todas as cinco são autenticadas por
+`Authorization: Bearer $INTERNAL_SERVICE_TOKEN`; só as três de composição exigem, além disso, **dois headers
+nomeando o usuário por quem o monolito age**. As da projeção não os exigem de propósito — não existe Chat sem
+autor, mas o nome de um usuário mudando no monolito não tem autor para nomear.
 
 | Header | O quê |
 | --- | --- |
 | `X-Acting-User` | identificador de quem está agindo |
 | `X-Acting-Company` | a Company dele — id de usuário sozinho não nomeia ninguém aqui, o mesmo id pode existir em duas Companies |
 
-Faltar qualquer um dos dois é recusa (`401`), não default: não existe Chat sem autor, e é isso que impede a
+Faltar qualquer um dos dois numa rota de composição é recusa (`401`), não default: é isso que impede a
 credencial de serviço de virar uma credencial onipotente — ela não amplia o que pode ser feito, só permite
 fazer em nome de alguém identificado. A Company nomeada no header é a Company em que o comando escreve.
 
@@ -94,9 +97,8 @@ fazer em nome de alguém identificado. A Company nomeada no header é a Company 
 O comando **carrega a identidade de cada Participant** (identificador, Company, kind, display name, avatar),
 porque o monolito já tinha esse dado em mãos para validar — mandar junto não custa nada e elimina o único
 caso que forçaria o serviço a perguntar de volta. `display_name` é obrigatório: um comando que nomeia só um
-identificador descreve alguém que o serviço nunca conseguiria renderizar. O display name e o avatar ainda
-não são guardados — a projeção de identidade é o ticket 06 — e o contrato do payload está fixado aqui para
-que aquele ticket não mexa no formato do fio.
+identificador descreve alguém que o serviço nunca conseguiria renderizar. O display name e o avatar viram a
+primeira escrita da projeção de identidade, descrita abaixo.
 
 ```http
 POST /internal/chats
@@ -166,6 +168,80 @@ estrutural: `tests/test_composition_commands.py` falha se qualquer módulo de `a
 cliente HTTP, porque no instante em que um existe aqui dentro, o primeiro "só pergunta pro monolito se esse
 usuário ainda está ativo" está a uma linha de distância — e vai ser escrito dentro de um request, onde o
 monolito lento vira o chat lento.
+
+## Projeção de identidade
+
+O serviço sabe o nome e o avatar de um usuário sem nunca perguntar ao monolito na hora do request — a
+[ADR-0010](../docs/adr/0010-no-request-depends-on-the-monolith.md) proíbe esse caminho, então o nome precisa
+já estar aqui quando a resposta é montada. `user_profiles` é onde ele está: Company, user kind, display name,
+avatar, `source_updated_at` e `synced_at`, com chave única em `(company_id, user_id)` — o mesmo id de usuário
+pode existir em duas Companies, exatamente pelo motivo que põe a Company em todo endereço de fan-out.
+
+**Nenhuma tabela de mensagem guarda nome, email ou avatar.** A mensagem guarda o identificador e mais nada; o
+nome é resolvido da projeção quando a resposta é construída. É isso que faz uma anonimização no monolito
+alcançar o histórico do chat: uma linha de perfil reescrita e toda mensagem que aquele usuário já mandou passa
+a ser assinada diferente, sem o serviço precisar saber o que é uma lei de proteção de dados. Denormalizar o
+nome na mensagem "para economizar um join" quebra isso em silêncio e só para o passado — mensagens novas
+parecem certas e o histórico mantém o nome de quem pediu para ser esquecido.
+`tests/test_identity_projection.py` falha se uma coluna dessas aparecer em qualquer tabela de mensagem, e
+acha as tabelas em vez de listá-las, para que a próxima cobrir-se sozinha.
+
+### As três escritas de entrada
+
+Todas idempotentes, porque todas chegam at-least-once. Nenhuma delas tem caminho de miss: nada aqui busca uma
+identidade que não tem, e um nome que a projeção nunca ouviu falar simplesmente não vem na resposta.
+
+- **O comando de composição.** `POST /internal/chats` e `POST /internal/chats/{id}/participants` já carregam a
+  identidade de cada Participant, então criar o Chat é o que ensina os nomes. Na prática a projeção conhece
+  qualquer usuário antes dele entrar em qualquer coisa.
+- **O stream de eventos.** `POST /internal/identity-events`, um usuário por vez.
+- **A carga em massa.** `POST /internal/identities`, para popular um ambiente novo ou reconstruir uma projeção
+  corrompida sem reprocessar todo o histórico.
+
+As duas últimas exigem só a credencial de serviço, sem header de ator — diferente dos comandos acima. Não
+existe Chat sem autor, mas o nome de um usuário mudando no monolito não tem autor para nomear, e exigir um
+seria pedir ao monolito que inventasse. A Company vem do próprio payload, do mesmo jeito que o webhook já faz.
+
+### A ordem é decidida por `source_updated_at`, não por chegada
+
+Last-writer-wins pelo relógio do **monolito**, comparado dentro do banco em vez de ler-e-então-escrever, para
+que dois eventos do mesmo usuário correndo em dois workers não leiam ambos a linha velha e decidam ambos que
+são os mais novos. Sem isso, um evento reentregue com dias de atraso reinstala o nome que carregava — que é o
+defeito que essa projeção existe para impedir, e aparece como um usuário cujo nome antigo volta sem que
+ninguém consiga reproduzir.
+
+A identidade que vem no comando de composição não tem `source_updated_at`: `ParticipantIdentity` é o formato
+de fio que o ticket 05 fixou, e fazer a projeção aterrissar não podia mexer nele. Ela assume então a única
+leitura que sobra — uma identidade de idade desconhecida é a coisa mais velha que existe, então cria a linha
+quando ninguém falou daquele usuário ainda e nunca sobrescreve o que algo datado já disse.
+
+**Não há tabela de event ids vistos.** `event_id` é obrigatório no fio e é o que torna um replay legível num
+log, mas a deduplicação por ele seria um segundo mecanismo para algo que o `source_updated_at` já resolve: um
+evento reentregue carrega o timestamp que carregava da primeira vez, a comparação é estrita, e timestamp igual
+perde. Um replay não escreve nada, chegando uma ou dez vezes, em qualquer ordem, intercalado com qualquer
+coisa. No instante em que essa ingress ganhar trabalho que não é idempotente por construção — uma linha de
+outbox na saída, que é o ticket 15 — o timestamp deixa de cobrir e a tabela passa a ser estrutural. Ela
+pertence àquele trabalho, não a este.
+
+Uma carga em massa que nomeia o mesmo usuário duas vezes é reduzida ao snapshot mais novo antes de escrever.
+Postgres se recusa a deixar um único `ON CONFLICT DO UPDATE` tocar a mesma linha duas vezes, e um rebuild é
+justamente a escrita que plausivelmente carrega um usuário repetido — duas páginas costuradas, ou um usuário
+que mudou enquanto o export rodava. Sem a regra não é uma linha perdida, é a carga inteira falhando.
+
+### O sinal de saúde é o lag
+
+`projection_lag(db)` (`app/services/projection_health.py`) devolve a maior distância entre `source_updated_at`
+e `synced_at`. Não há hit rate de cache para observar, porque não há caminho de miss: um stream parado é
+invisível por dentro — toda resposta continua respondendo, rápido, com um nome silenciosamente velho. A maior
+distância e não uma média, porque a média esconderia o único usuário cujas atualizações pararam de chegar
+atrás de milhares que estão bem. Linhas sem `source_updated_at` ficam de fora e não são lag: vieram de um
+comando de composição, que não carrega timestamp nenhum para medir contra.
+
+Como `oldest_unpublished_age`, é uma função hoje e o ticket 18 é quem a transforma em algo monitorado. Ela não
+passa por `CompanyScope` — quem observa isso é um operador, que não tem token nem Company, e um lag calculado
+por Company esconderia a que parou atrás das que estão bem. Por isso mora num módulo só dela: a isenção em
+`tests/test_company_isolation.py` é por entidade e só pode ser declarada por arquivo, e `profiles_by_user_id`,
+que **é** uma leitura em nome de um usuário, continua guardada em `app/services/identity.py`.
 
 ## Tempo real: outbox, drain e três endereços
 
