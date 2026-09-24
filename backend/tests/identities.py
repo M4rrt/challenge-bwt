@@ -15,6 +15,7 @@ from httpx import AsyncClient, Response
 
 from tests.chats import open_chat, service_credential
 from tests.chat_tokens import DEFAULT_COMPANY_ID, bearer, caller_token
+from tests.messages import say
 
 
 def now() -> datetime:
@@ -111,11 +112,7 @@ async def a_chat_with_one_message(
     reader_id, reader_token = caller_token(display_name="Bruno Lima")
 
     chat_id = (await open_chat(client, bearer(sender_token), reader_id)).json()["id"]
-    await client.post(
-        f"/chats/{chat_id}/messages",
-        json={"body": "bom dia"},
-        headers=bearer(sender_token),
-    )
+    await say(client, chat_id, bearer(sender_token), "bom dia")
 
     async def sender_names() -> list[str]:
         read = await client.get(

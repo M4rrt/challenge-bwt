@@ -11,6 +11,7 @@ from app.schemas.message import MessageCreate
 from app.services.message import ChatNotFoundError, list_messages, send_message
 from tests.chats import open_chat_id, open_chat_of
 from tests.chat_tokens import DEFAULT_COMPANY_ID, bearer, caller_token, make_caller
+from tests.messages import bodies, say
 
 
 async def _create_chat(db: AsyncSession, *user_ids: uuid.UUID) -> Chat:
@@ -28,7 +29,9 @@ async def _create_chat(db: AsyncSession, *user_ids: uuid.UUID) -> Chat:
 async def _send(db: AsyncSession, caller: Caller, chat_id: uuid.UUID, body: str):
     """Call the service the way the router does — with the scope its dependency injects."""
     scope = CompanyScope.of(caller)
-    return await send_message(db, scope, caller, chat_id, MessageCreate(body=body))
+    return await send_message(
+        db, scope, caller, chat_id, MessageCreate(body=body, client_message_id=uuid.uuid4().hex)
+    )
 
 
 async def _list(db: AsyncSession, caller: Caller, chat_id: uuid.UUID):
@@ -88,11 +91,7 @@ async def test_send_message_endpoint_persists_and_returns_it(client: AsyncClient
     user_b_id, _ = caller_token()
     chat_id = await open_chat_id(client, headers_a, user_b_id)
 
-    response = await client.post(
-        f"/chats/{chat_id}/messages",
-        json={"body": "hello"},
-        headers=headers_a,
-    )
+    response = await say(client, chat_id, headers_a, "hello")
 
     assert response.status_code == 201
     body = response.json()
@@ -108,11 +107,7 @@ async def test_non_participant_cannot_send_message_via_endpoint(client: AsyncCli
     headers_outsider = bearer(caller_token()[1])
     chat_id = await open_chat_id(client, headers_a, user_b_id)
 
-    response = await client.post(
-        f"/chats/{chat_id}/messages",
-        json={"body": "hello"},
-        headers=headers_outsider,
-    )
+    response = await say(client, chat_id, headers_outsider, "hello")
 
     assert response.status_code == 404
 
@@ -124,20 +119,10 @@ async def test_participant_can_fetch_message_backlog_in_order(client: AsyncClien
     headers_b = bearer(token_b)
     chat_id = await open_chat_id(client, headers_a, user_b_id)
 
-    await client.post(
-        f"/chats/{chat_id}/messages", json={"body": "oi"}, headers=headers_a
-    )
-    await client.post(
-        f"/chats/{chat_id}/messages",
-        json={"body": "tudo bem?"},
-        headers=headers_b,
-    )
+    await say(client, chat_id, headers_a, "oi")
+    await say(client, chat_id, headers_b, "tudo bem?")
 
-    response = await client.get(f"/chats/{chat_id}/messages", headers=headers_a)
-
-    assert response.status_code == 200
-    bodies = [m["body"] for m in response.json()]
-    assert bodies == ["oi", "tudo bem?"]
+    assert await bodies(client, chat_id, headers_a) == ["oi", "tudo bem?"]
 
 
 async def test_non_participant_cannot_fetch_backlog_via_endpoint(client: AsyncClient):
@@ -145,9 +130,7 @@ async def test_non_participant_cannot_fetch_backlog_via_endpoint(client: AsyncCl
     user_b_id, _ = caller_token()
     headers_outsider = bearer(caller_token()[1])
     chat_id = await open_chat_id(client, headers_a, user_b_id)
-    await client.post(
-        f"/chats/{chat_id}/messages", json={"body": "oi"}, headers=headers_a
-    )
+    await say(client, chat_id, headers_a, "oi")
 
     response = await client.get(
         f"/chats/{chat_id}/messages", headers=headers_outsider
@@ -164,9 +147,7 @@ async def test_a_message_sent_without_naming_a_visibility_is_visible_to_all(
     user_b_id, _ = caller_token()
     chat_id = await open_chat_id(client, headers_a, user_b_id)
 
-    response = await client.post(
-        f"/chats/{chat_id}/messages", json={"body": "oi"}, headers=headers_a
-    )
+    response = await say(client, chat_id, headers_a, "oi")
 
     assert response.json()["visibility"] == "all"
 
@@ -184,11 +165,7 @@ async def test_a_staff_only_message_is_refused_in_a_staff_chat(client: AsyncClie
     user_b_id, _ = caller_token()
     chat_id = await open_chat_id(client, headers_a, user_b_id)
 
-    response = await client.post(
-        f"/chats/{chat_id}/messages",
-        json={"body": "só a equipe", "visibility": "staff_only"},
-        headers=headers_a,
-    )
+    response = await say(client, chat_id, headers_a, "só a equipe", visibility="staff_only")
 
     assert response.status_code == 422
 
@@ -213,12 +190,6 @@ async def _client_chat_with_two_staff(client: AsyncClient) -> tuple[str, dict, d
     return created.json()["id"], headers_a, headers_b, headers_c
 
 
-async def _bodies(client: AsyncClient, chat_id: str, headers: dict) -> list[str]:
-    response = await client.get(f"/chats/{chat_id}/messages", headers=headers)
-    assert response.status_code == 200
-    return [message["body"] for message in response.json()]
-
-
 async def test_a_staff_only_message_reaches_staff_and_not_the_end_client(
     client: AsyncClient,
 ):
@@ -232,16 +203,12 @@ async def test_a_staff_only_message_reaches_staff_and_not_the_end_client(
     chat_id, headers_a, headers_b, headers_c = await _client_chat_with_two_staff(client)
 
     for body, visibility in (("um", "all"), ("segredo", "staff_only"), ("dois", "all")):
-        sent = await client.post(
-            f"/chats/{chat_id}/messages",
-            json={"body": body, "visibility": visibility},
-            headers=headers_a,
-        )
+        sent = await say(client, chat_id, headers_a, body, visibility=visibility)
         assert sent.status_code == 201
 
-    assert await _bodies(client, chat_id, headers_a) == ["um", "segredo", "dois"]
-    assert await _bodies(client, chat_id, headers_b) == ["um", "segredo", "dois"]
-    assert await _bodies(client, chat_id, headers_c) == ["um", "dois"]
+    assert await bodies(client, chat_id, headers_a) == ["um", "segredo", "dois"]
+    assert await bodies(client, chat_id, headers_b) == ["um", "segredo", "dois"]
+    assert await bodies(client, chat_id, headers_c) == ["um", "dois"]
 
 
 async def test_an_end_client_cannot_write_a_staff_only_message(client: AsyncClient):
@@ -253,11 +220,7 @@ async def test_an_end_client_cannot_write_a_staff_only_message(client: AsyncClie
     """
     chat_id, _, _, headers_c = await _client_chat_with_two_staff(client)
 
-    response = await client.post(
-        f"/chats/{chat_id}/messages",
-        json={"body": "e eu?", "visibility": "staff_only"},
-        headers=headers_c,
-    )
+    response = await say(client, chat_id, headers_c, "e eu?", visibility="staff_only")
 
     assert response.status_code == 422
 
@@ -280,17 +243,11 @@ async def test_a_staff_only_message_does_not_stir_the_end_clients_chat_list(
     announces the Staff-only Message without quoting it.
     """
     chat_id, headers_a, _, headers_c = await _client_chat_with_two_staff(client)
-    await client.post(
-        f"/chats/{chat_id}/messages", json={"body": "oi"}, headers=headers_a
-    )
+    await say(client, chat_id, headers_a, "oi")
     before_for_client = await _last_message_at(client, chat_id, headers_c)
     before_for_staff = await _last_message_at(client, chat_id, headers_a)
 
-    await client.post(
-        f"/chats/{chat_id}/messages",
-        json={"body": "segredo", "visibility": "staff_only"},
-        headers=headers_a,
-    )
+    await say(client, chat_id, headers_a, "segredo", visibility="staff_only")
 
     assert await _last_message_at(client, chat_id, headers_c) == before_for_client
     assert await _last_message_at(client, chat_id, headers_a) != before_for_staff

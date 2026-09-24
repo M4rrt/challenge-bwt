@@ -12,6 +12,7 @@ from app.services.outbox import drain_once
 from app.services.realtime import address_for_user, publish
 from tests.chats import open_chat
 from tests.chat_tokens import DEFAULT_COMPANY_ID, bearer, caller_token
+from tests.messages import say
 
 
 async def test_invalid_token_rejects_user_websocket_connection(client: AsyncClient):
@@ -72,11 +73,7 @@ async def test_participant_is_notified_over_user_channel_when_message_arrives(
             f"/websocket/users/me?token={token_b}",
             client=ws_client,
         ) as ws:
-            send_response = await client.post(
-                f"/chats/{chat_id}/messages",
-                json={"body": "oi"},
-                headers=headers_a,
-            )
+            send_response = await say(client, chat_id, headers_a, "oi")
             message_created_at = send_response.json()["created_at"]
             await drain_once(db_session)
 

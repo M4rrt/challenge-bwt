@@ -29,6 +29,7 @@ from app.services.outbox import drain_once
 from tests.chats import open_chat
 from tests.chat_tokens import OMITTED, bearer, caller_token
 from tests.identities import identity_event, now
+from tests.messages import say
 
 
 def _signed(payload: dict[str, str]) -> tuple[bytes, dict[str, str]]:
@@ -64,11 +65,7 @@ async def test_message_list_does_not_cross_company(client: AsyncClient):
 
     created = await open_chat(client, bearer(token_a), str(user_b_id))
     chat_id = created.json()["id"]
-    await client.post(
-        f"/chats/{chat_id}/messages",
-        json={"body": "interno"},
-        headers=bearer(token_a),
-    )
+    await say(client, chat_id, bearer(token_a), "interno")
 
     inside = await client.get(f"/chats/{chat_id}/messages", headers=bearer(token_b_in_x))
     outside = await client.get(f"/chats/{chat_id}/messages", headers=bearer(token_b_in_y))
@@ -271,9 +268,7 @@ async def test_a_caller_with_no_company_reaches_nothing(client: AsyncClient):
         await client.get("/auth/me", headers=headers),
         await client.get("/chats", headers=headers),
         await client.get(f"/chats/{chat_id}/messages", headers=headers),
-        await client.post(
-            f"/chats/{chat_id}/messages", json={"body": "oi"}, headers=headers
-        ),
+        await say(client, chat_id, headers, "oi"),
     ]
 
     assert [response.status_code for response in responses] == [401] * len(responses)
@@ -289,16 +284,8 @@ async def test_sending_into_another_companys_chat_is_refused(client: AsyncClient
     created = await open_chat(client, bearer(token_a), str(user_b_id))
     chat_id = created.json()["id"]
 
-    refused = await client.post(
-        f"/chats/{chat_id}/messages",
-        json={"body": "de fora"},
-        headers=bearer(token_b_in_y),
-    )
-    never_existed = await client.post(
-        f"/chats/{uuid.uuid4()}/messages",
-        json={"body": "de fora"},
-        headers=bearer(token_b_in_y),
-    )
+    refused = await say(client, chat_id, bearer(token_b_in_y), "de fora")
+    never_existed = await say(client, str(uuid.uuid4()), bearer(token_b_in_y), "de fora")
 
     assert refused.status_code == 404
     assert (refused.status_code, refused.json()) == (
@@ -425,9 +412,7 @@ async def test_a_display_name_from_another_company_is_never_resolved(client: Asy
     user_b_id, token_b_in_x = caller_token(company_id=company_x)
 
     chat_id = (await open_chat(client, bearer(token_a_in_x), user_b_id)).json()["id"]
-    await client.post(
-        f"/chats/{chat_id}/messages", json={"body": "oi"}, headers=bearer(token_a_in_x)
-    )
+    await say(client, chat_id, bearer(token_a_in_x), "oi")
     await identity_event(
         client,
         str(user_a_id),

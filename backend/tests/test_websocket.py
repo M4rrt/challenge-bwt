@@ -9,6 +9,7 @@ from app.main import app
 from app.services.outbox import drain_once
 from tests.chats import open_chat_id
 from tests.chat_tokens import bearer, caller_token
+from tests.messages import say
 
 
 async def test_participant_receives_message_sent_by_another_participant_over_websocket(
@@ -29,11 +30,7 @@ async def test_participant_receives_message_sent_by_another_participant_over_web
             f"/websocket/chats/{chat_id}?token={token_b}",
             client=ws_client,
         ) as ws:
-            response = await client.post(
-                f"/chats/{chat_id}/messages",
-                json={"body": "oi"},
-                headers=headers_a,
-            )
+            response = await say(client, chat_id, headers_a, "oi")
             assert response.status_code == 201
             await drain_once(db_session)
 
