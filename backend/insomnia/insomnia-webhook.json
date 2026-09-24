@@ -1,237 +1,223 @@
 {
   "_type": "export",
   "__export_format": 4,
-  "__export_date": "2026-08-07T00:00:00.000Z",
-  "__export_source": "manual:chat-app-ticket-07",
+  "__export_date": "2026-09-24T00:00:00.000Z",
+  "__export_source": "manual:chat-service-ticket-09",
   "resources": [
     {
-      "_id": "wrk_chatapp_webhook",
+      "_id": "wrk_hook",
       "_type": "workspace",
-      "name": "Chat App — Ticket 07 (Webhook)",
-      "description": "External webhook message ingestion (ticket 07), HMAC-SHA256 signed. Unlike the other collections, the '03 - Webhook Tests' folder cannot use env-var templating for the request bodies: Insomnia can't compute an HMAC signature inline, so each signature is precomputed for the EXACT body text sitting next to it. If you edit a body, or the fixture chat_id changes, you must recompute the signature by hand — see backend/README.md's Webhook section for the recipe (HMAC-SHA256 over the raw body bytes, keyed by WEBHOOK_HMAC_SECRET, hex-encoded).",
+      "name": "Chat Service — Webhook externo",
+      "description": "POST /webhook/messages (ticket 07): mensagem de um sistema externo, autenticada por HMAC sobre o corpo cru.",
       "scope": "collection"
     },
     {
-      "_id": "env_base_webhook",
+      "_id": "env_base",
       "_type": "environment",
-      "parentId": "wrk_chatapp_webhook",
+      "parentId": "wrk_hook",
       "name": "Base Environment",
       "data": {
         "base_url": "http://localhost:8000",
-        "token_a": "",
+        "ws_base_url": "ws://localhost:8000",
+        "service_token": "change-me",
+        "company_id": "11111111-1111-1111-1111-111111111111",
+        "chat_id": "",
+        "client_chat_id": "",
+        "message_id": "",
+        "cursor": "",
         "user_a_id": "",
         "user_b_id": "",
-        "chat_id": ""
+        "user_c_id": "",
+        "user_d_id": "",
+        "user_e_id": "",
+        "token_a": "",
+        "token_b": "",
+        "token_c": "",
+        "token_d": "",
+        "token_e": ""
       },
       "isPrivate": false,
       "metaSortKey": 0
     },
     {
-      "_id": "fld_webhook_auth",
+      "_id": "fld_hook_setup",
       "_type": "request_group",
-      "parentId": "wrk_chatapp_webhook",
-      "name": "01 - Auth (fixture users, reference only)",
-      "description": "These created the fixture chat that '03 - Webhook Tests' is hardcoded against (chat_id 2811b4a5-60d9-4f81-b899-3e78012b29b9, participants insomnia-a@example.com / insomnia-b@example.com). Already run once against the local DB — re-running Register will 409 (duplicate email) unless the DB was reset. Kept here so the fixture is reproducible from scratch if needed.",
+      "parentId": "wrk_hook",
+      "name": "00 - Setup (leia primeiro)",
+      "description": "A assinatura é HMAC-SHA256 sobre os BYTES do corpo, então ela pertence a uma sequência exata: reindentar o JSON, trocar a ordem das chaves ou mudar um caractere do chat_id já quebra. Por isso o `chat_id` NÃO é templatizado aqui — o serviço é quem gera esse identificador, e um `{{ _.chat_id }}` viraria bytes diferentes dos assinados.\n\nPara os testes que esperam 201, re-assine com o SEU chat_id:\n\n    cd backend\n    echo '{\"company_id\": \"…\", \"chat_id\": \"…\", \"body\": \"oi\"}' | uv run python -m scripts.sign_webhook\n\nEle imprime duas linhas: o corpo compacto (cole no body) e a assinatura (cole no X-Signature). As assinaturas gravadas abaixo valem para WEBHOOK_HMAC_SECRET=change-me e o chat_id de exemplo 2811b4a5-60d9-4f81-b899-3e78012b29b9 — servem como referência, e o teste 404 funciona sem fixture nenhuma.",
       "metaSortKey": 0
     },
     {
-      "_id": "req_webhook_register_a",
-      "_type": "request",
-      "parentId": "fld_webhook_auth",
-      "name": "Register User A (insomnia-a)",
-      "method": "POST",
-      "url": "{{ _.base_url }}/auth/register",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"email\": \"insomnia-a@example.com\",\n  \"username\": \"insomnia-a\",\n  \"password\": \"Senha-Forte-123\"\n}"
-      },
-      "headers": [{ "name": "Content-Type", "value": "application/json" }],
-      "description": "Copy response `id` -> env `user_a_id`.",
-      "metaSortKey": 0
-    },
-    {
-      "_id": "req_webhook_register_b",
-      "_type": "request",
-      "parentId": "fld_webhook_auth",
-      "name": "Register User B (insomnia-b)",
-      "method": "POST",
-      "url": "{{ _.base_url }}/auth/register",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"email\": \"insomnia-b@example.com\",\n  \"username\": \"insomnia-b\",\n  \"password\": \"Senha-Forte-123\"\n}"
-      },
-      "headers": [{ "name": "Content-Type", "value": "application/json" }],
-      "description": "Copy response `id` -> env `user_b_id`.",
+      "_id": "fld_hook",
+      "_type": "request_group",
+      "parentId": "wrk_hook",
+      "name": "01 - Webhook (ticket 07)",
+      "description": "O webhook é o único chamador sem token: ele nomeia a Company no próprio payload e lê o Chat dentro dela.",
       "metaSortKey": 1
     },
     {
-      "_id": "req_webhook_login_a",
+      "_id": "req_hook_ok",
       "_type": "request",
-      "parentId": "fld_webhook_auth",
-      "name": "Login User A",
-      "method": "POST",
-      "url": "{{ _.base_url }}/auth/login",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"email\": \"insomnia-a@example.com\",\n  \"password\": \"Senha-Forte-123\"\n}"
-      },
-      "headers": [{ "name": "Content-Type", "value": "application/json" }],
-      "description": "Copy response `access_token` -> env `token_a`.",
-      "metaSortKey": 2
-    },
-    {
-      "_id": "fld_webhook_setup",
-      "_type": "request_group",
-      "parentId": "wrk_chatapp_webhook",
-      "name": "02 - Setup (create the fixture chat)",
-      "description": "Also already run once. If you re-create it, the response `id` will be a NEW UUID — you must then recompute every signature in '03 - Webhook Tests' against that new chat_id (they're hardcoded, not templated).",
-      "metaSortKey": 1
-    },
-    {
-      "_id": "req_webhook_create_chat",
-      "_type": "request",
-      "parentId": "fld_webhook_setup",
-      "name": "Create 1:1 chat (A -> B)",
-      "method": "POST",
-      "url": "{{ _.base_url }}/chats",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"type\": \"staff\",\n  \"participants\": [{ \"user_id\": \"{{ _.user_b_id }}\", \"user_kind\": \"staff\" }]\n}"
-      },
-      "headers": [
-        { "name": "Content-Type", "value": "application/json" },
-        { "name": "Authorization", "value": "Bearer {{ _.token_a }}" }
-      ],
-      "description": "Expect 201. Copy response `id` -> env `chat_id` for reference. The fixture value baked into '03 - Webhook Tests' is 2811b4a5-60d9-4f81-b899-3e78012b29b9.",
-      "metaSortKey": 0
-    },
-    {
-      "_id": "fld_webhook_tests",
-      "_type": "request_group",
-      "parentId": "wrk_chatapp_webhook",
-      "name": "03 - Webhook Tests (ticket 07) — hardcoded bodies + signatures",
-      "description": "Every body+signature pair below is pinned to chat_id 2811b4a5-60d9-4f81-b899-3e78012b29b9 and secret 'change-me' (backend/.env's WEBHOOK_HMAC_SECRET). Run '5. Unknown chat_id' anytime (no fixture dependency); the other four require the fixture chat from folders 01-02 to already exist in the DB.",
-      "metaSortKey": 2
-    },
-    {
-      "_id": "req_webhook_valid_signature",
-      "_type": "request",
-      "parentId": "fld_webhook_tests",
-      "name": "1. Valid signature -> 201 persisted + delivered",
-      "description": "Expect: 201, response echoes sender_id=null, sender_type=external, source_label=Insomnia Test.",
+      "parentId": "fld_hook",
+      "name": "1. Assinatura válida -> 201",
       "method": "POST",
       "url": "{{ _.base_url }}/webhook/messages",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\"chat_id\": \"2811b4a5-60d9-4f81-b899-3e78012b29b9\", \"body\": \"Hello from Insomnia\", \"source_label\": \"Insomnia Test\"}"
-      },
+      "description": "Re-assine com o seu chat_id. Espere 201 com sender_id null, sender_type 'external' e o source_label ecoado — e a mensagem entregue ao vivo a quem estiver conectado.",
+      "metaSortKey": 0,
       "headers": [
-        { "name": "Content-Type", "value": "application/json" },
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
         {
           "name": "X-Signature",
-          "value": "a21bc99f97cc01196f482564d1a7c2ebd9fcb1e33897e2de2b506ed61c61e762"
+          "value": "aace3a1bcdc7eb1538533515446542e13c9554e6900e791d0c5f40e47a5f1800"
         }
       ],
-      "metaSortKey": 0
-    },
-    {
-      "_id": "req_webhook_missing_signature",
-      "_type": "request",
-      "parentId": "fld_webhook_tests",
-      "name": "2. Missing X-Signature header -> 401",
-      "description": "No X-Signature header sent at all. Expect: 401, no message persisted.",
-      "method": "POST",
-      "url": "{{ _.base_url }}/webhook/messages",
       "body": {
         "mimeType": "application/json",
-        "text": "{\"chat_id\": \"2811b4a5-60d9-4f81-b899-3e78012b29b9\", \"body\": \"No signature header\"}"
-      },
-      "headers": [{ "name": "Content-Type", "value": "application/json" }],
-      "metaSortKey": 1
+        "text": "{\"company_id\": \"11111111-1111-1111-1111-111111111111\", \"chat_id\": \"2811b4a5-60d9-4f81-b899-3e78012b29b9\", \"body\": \"Hello from Insomnia\", \"source_label\": \"Insomnia Test\"}"
+      }
     },
     {
-      "_id": "req_webhook_invalid_signature",
+      "_id": "req_hook_nosig",
       "_type": "request",
-      "parentId": "fld_webhook_tests",
-      "name": "3. Invalid X-Signature (garbage) -> 401",
-      "description": "X-Signature is 64 zero characters - well-formed hex but wrong. Expect: 401, no message persisted.",
+      "parentId": "fld_hook",
+      "name": "2. Sem X-Signature -> 401",
       "method": "POST",
       "url": "{{ _.base_url }}/webhook/messages",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\"chat_id\": \"2811b4a5-60d9-4f81-b899-3e78012b29b9\", \"body\": \"Bad signature\"}"
-      },
+      "description": "Header ausente. Espere 401 e nada gravado.",
+      "metaSortKey": 1,
       "headers": [
-        { "name": "Content-Type", "value": "application/json" },
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\"company_id\": \"11111111-1111-1111-1111-111111111111\", \"chat_id\": \"2811b4a5-60d9-4f81-b899-3e78012b29b9\", \"body\": \"Hello from Insomnia\", \"source_label\": \"Insomnia Test\"}"
+      }
+    },
+    {
+      "_id": "req_hook_badsig",
+      "_type": "request",
+      "parentId": "fld_hook",
+      "name": "3. X-Signature lixo -> 401",
+      "method": "POST",
+      "url": "{{ _.base_url }}/webhook/messages",
+      "description": "64 zeros: hexadecimal bem formado e errado. Espere 401.",
+      "metaSortKey": 2,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
         {
           "name": "X-Signature",
-          "value": "0000000000000000000000000000000000000000000000000000000000000"
+          "value": "0000000000000000000000000000000000000000000000000000000000000000"
         }
       ],
-      "metaSortKey": 2
-    },
-    {
-      "_id": "req_webhook_tampered_body",
-      "_type": "request",
-      "parentId": "fld_webhook_tests",
-      "name": "4. Tampered body -> 401",
-      "description": "X-Signature below is valid for body {\"chat_id\": \"2811b4a5-60d9-4f81-b899-3e78012b29b9\", \"body\": \"original message\"} but the body actually sent says 'tampered message' instead. Expect: 401 — the signature no longer matches the bytes sent.",
-      "method": "POST",
-      "url": "{{ _.base_url }}/webhook/messages",
       "body": {
         "mimeType": "application/json",
-        "text": "{\"chat_id\": \"2811b4a5-60d9-4f81-b899-3e78012b29b9\", \"body\": \"tampered message\"}"
-      },
-      "headers": [
-        { "name": "Content-Type", "value": "application/json" },
-        {
-          "name": "X-Signature",
-          "value": "7d90e95f2ee2e3c99f89693c0410d71262baa542f89639ba4041a0b41d369f09"
-        }
-      ],
-      "metaSortKey": 3
+        "text": "{\"company_id\": \"11111111-1111-1111-1111-111111111111\", \"chat_id\": \"2811b4a5-60d9-4f81-b899-3e78012b29b9\", \"body\": \"Hello from Insomnia\", \"source_label\": \"Insomnia Test\"}"
+      }
     },
     {
-      "_id": "req_webhook_unknown_chat",
+      "_id": "req_hook_tampered",
       "_type": "request",
-      "parentId": "fld_webhook_tests",
-      "name": "5. Unknown chat_id -> 404",
-      "description": "Valid signature, but chat_id 00000000-0000-0000-0000-000000000000 doesn't exist. Expect: 404. No fixture dependency — works even without folders 01-02.",
+      "parentId": "fld_hook",
+      "name": "4. Corpo adulterado -> 401",
       "method": "POST",
       "url": "{{ _.base_url }}/webhook/messages",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\"chat_id\": \"00000000-0000-0000-0000-000000000000\", \"body\": \"nobody home\"}"
-      },
+      "description": "A assinatura vale para o corpo com 'original message'; o que vai no envelope diz 'tampered message'. Espere 401 — a assinatura cobre os bytes enviados.",
+      "metaSortKey": 3,
       "headers": [
-        { "name": "Content-Type", "value": "application/json" },
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
         {
           "name": "X-Signature",
-          "value": "bb34d346b39a0f4d88ba41934b27481bf1bae92ba236550e69fb811bd7478ee0"
+          "value": "fb91c4e03a3372a49c505b01d19f9e7c9c9a7060da07ce049904171057891d57"
         }
       ],
-      "metaSortKey": 4
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\"company_id\": \"11111111-1111-1111-1111-111111111111\", \"chat_id\": \"2811b4a5-60d9-4f81-b899-3e78012b29b9\", \"body\": \"tampered message\"}"
+      }
     },
     {
-      "_id": "req_webhook_custom_utf8",
+      "_id": "req_hook_unknown",
       "_type": "request",
-      "parentId": "fld_webhook_tests",
-      "name": "6. Custom message (UTF-8 source_label) -> 201",
-      "description": "Ad-hoc manual test with a non-ASCII source_label (accented 'é' + trailing space), to confirm the signature check works over UTF-8-encoded bytes, not just ASCII. Expect: 201, response echoes the body/source_label verbatim, delivered live to any connected participant.",
+      "parentId": "fld_hook",
+      "name": "5. chat_id inexistente -> 404",
       "method": "POST",
       "url": "{{ _.base_url }}/webhook/messages",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\"chat_id\": \"2811b4a5-60d9-4f81-b899-3e78012b29b9\", \"body\": \"Hello from Insomnia\", \"source_label\": \"Esse é um teste de webhook \"}"
-      },
+      "description": "Assinatura VÁLIDA, Chat inexistente. Espere 404. Não depende de fixture: roda sozinho.",
+      "metaSortKey": 4,
       "headers": [
-        { "name": "Content-Type", "value": "application/json" },
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
         {
           "name": "X-Signature",
-          "value": "81a8c81311fd9a00a2f39bd4a29914d77293c698c15be12aa9d3034229d53177"
+          "value": "e841e00163bbac7c12f964bf736e05657ce7af356836902612b72ff6df8ae851"
         }
       ],
-      "metaSortKey": 5
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\"company_id\": \"11111111-1111-1111-1111-111111111111\", \"chat_id\": \"00000000-0000-0000-0000-000000000000\", \"body\": \"nobody home\"}"
+      }
+    },
+    {
+      "_id": "req_hook_foreign",
+      "_type": "request",
+      "parentId": "fld_hook",
+      "name": "6. Company que não é dona do Chat -> 404",
+      "method": "POST",
+      "url": "{{ _.base_url }}/webhook/messages",
+      "description": "Assinatura válida, mas o Chat pertence a outra Company. O escopo cai no WHERE, então atravessar a fronteira e pedir algo inexistente são a mesma resposta. Espere 404.",
+      "metaSortKey": 5,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "X-Signature",
+          "value": "a77d91ba08b33bc73fecd74cbd7d31f326a1e82712bf3697777c6cbae25d0e91"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\"company_id\": \"99999999-9999-9999-9999-999999999999\", \"chat_id\": \"2811b4a5-60d9-4f81-b899-3e78012b29b9\", \"body\": \"de outra company\"}"
+      }
+    },
+    {
+      "_id": "req_hook_utf8",
+      "_type": "request",
+      "parentId": "fld_hook",
+      "name": "7. UTF-8 no corpo -> 201",
+      "method": "POST",
+      "url": "{{ _.base_url }}/webhook/messages",
+      "description": "Acentos no body e no source_label: confirma que a assinatura é sobre bytes UTF-8, não ASCII. Re-assine com o seu chat_id.",
+      "metaSortKey": 6,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "X-Signature",
+          "value": "a3b3576b008e3ccd416ab676c57740de40333cdeff4c92f2fa480c3c4672ab6c"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\"company_id\": \"11111111-1111-1111-1111-111111111111\", \"chat_id\": \"2811b4a5-60d9-4f81-b899-3e78012b29b9\", \"body\": \"Olá do webhook\", \"source_label\": \"Integração é assim\"}"
+      }
     }
   ]
 }

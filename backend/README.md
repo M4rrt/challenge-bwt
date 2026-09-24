@@ -561,6 +561,43 @@ Não bloqueia o funcionamento hoje, mas seria o primeiro ponto de atenção ante
 - **`GET /chats` ainda devolve o conjunto inteiro.** `GET /chats/{id}/messages` pagina por cursor desde o ticket 09; a lista de Chats não, e é o ticket 10 que a pagina pelo mesmo contrato de cursor, junto com o filtro por nome de participante.
 - **Zero logging estruturado** em todo o `app/` — combinado com o subscriber Redis sem tratamento de falha (acima), é o ponto mais arriscado de operar isso em produção sem visibilidade.
 
+## Testes manuais: Insomnia e os dois scripts
+
+`insomnia/` tem quatro coleções — composição e lista de Chats, mensagens/leitura/paginação, webhook e
+WebSocket. Importe o `.json` no Insomnia e preencha o Base Environment.
+
+**Não existe login.** O monolito é o único emissor de chat token (ticket 01), então nenhuma requisição
+devolve um. `scripts/mint_chat_token.py` faz o papel do monolito:
+
+```
+uv run python -m scripts.mint_chat_token --insomnia
+```
+
+Isso imprime o Base Environment inteiro — cinco usuários (A–D staff, E cliente final), os tokens deles,
+o `service_token` e o `company_id` — para colar na coleção. D nunca entra em Chat nenhum, para que
+"não vê nada" seja afirmado por alguém real e não por um banco vazio; E existe para a Staff-only
+Message ter de quem ser escondida. Os tokens valem 12h (`--minutes`).
+
+O script só funciona porque a verificação ainda é HS256 sobre segredo compartilhado — a propriedade que
+a [ADR-0009](../docs/adr/0009-chat-owns-token-in-rs256.md) existe para remover. Quando o ticket 19
+trocar por RS256, ele passa a precisar da chave privada de teste e o serviço fica só com a pública.
+
+**A assinatura do webhook cobre bytes, não um documento.** `scripts/sign_webhook.py` recebe o corpo na
+entrada padrão e imprime duas linhas: o corpo compacto e a assinatura.
+
+```
+echo '{"company_id": "...", "chat_id": "...", "body": "oi"}' | uv run python -m scripts.sign_webhook
+```
+
+Por isso o `chat_id` **não** é templatizado nas requisições de webhook: o serviço é quem gera esse
+identificador, e um `{{ chat_id }}` produziria bytes diferentes dos assinados. As assinaturas gravadas
+na coleção valem para `WEBHOOK_HMAC_SECRET=change-me` e um `chat_id` de exemplo — as que esperam 401 e
+404 rodam como estão, e as que esperam 201 pedem que você re-assine com o seu Chat.
+
+**O WebSocket depende do drain.** Desde o ticket 07 a requisição não publica: ela grava no outbox e um
+processo separado publica. Com `docker compose up` o drain sobe junto; rodando o backend à mão, nada
+chega no socket até o drain rodar também.
+
 ## Migrations
 
 ```
