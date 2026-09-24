@@ -3,7 +3,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime, timezone
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import ColumnElement, and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -306,6 +306,19 @@ async def remove_participant(
     return chat
 
 
+def _read_by(chat: Chat, user_id: uuid.UUID) -> Participant | None:
+    """This reader's own row in the Chat, which is where their read state lives.
+
+    Already loaded — `list_chats` selectinloads the Participants to build the
+    identifier list — so this is a lookup and not a query. None means a reader
+    who is not a current Participant, which `list_chats` cannot produce and
+    a future caller might.
+    """
+    return next(
+        (p for p in chat.current_participants if p.user_id == user_id), None
+    )
+
+
 async def list_chats(
     db: AsyncSession, scope: CompanyScope, caller: Caller
 ) -> list[ChatRead]:
@@ -324,8 +337,18 @@ async def list_chats(
     )
     chats = list(result.all())
 
-    last_message_at = await get_last_message_at_by_chat(db, scope, visibilities_by_chat(caller, chats))
-    listed = [ChatRead.of(chat, last_message_at.get(chat.id)) for chat in chats]
+    visible = visibilities_by_chat(caller, chats)
+    last_message_at = await get_last_message_at_by_chat(db, scope, visible)
+    unread = await unread_counts(db, scope, visible, for_user=caller.id)
+    listed = [
+        ChatRead.of(
+            chat,
+            last_message_at.get(chat.id),
+            unread.get((chat.id, caller.id), 0),
+            _read_by(chat, caller.id),
+        )
+        for chat in chats
+    ]
     listed.sort(key=lambda chat: chat.last_message_at or _UNIX_EPOCH, reverse=True)
     return listed
 
@@ -345,6 +368,38 @@ def visibilities_by_chat(
     }
 
 
+def in_a_chat_the_reader_may_see_it_in(
+    visible: Mapping[uuid.UUID, Sequence[MessageVisibility]],
+) -> ColumnElement[bool]:
+    """Is this Message in one of those Chats, addressed where the reader can see it.
+
+    Both aggregates a chat summary is built from need this clause and neither
+    should spell it: they are the two places a Staff-only Message could leak
+    into an end client's list — once as a timestamp that ticks forward, once as
+    a badge that goes up — and a filter written twice is a filter that gets
+    updated once.
+
+    Chats are grouped by their set of visibilities rather than given a clause
+    each: a single reader has at most one set per Chat type, so the OR stays two
+    branches wide however long the list is.
+    """
+    chat_ids_by_visibilities: dict[tuple[MessageVisibility, ...], list[uuid.UUID]] = (
+        defaultdict(list)
+    )
+    for chat_id, visibilities in visible.items():
+        chat_ids_by_visibilities[tuple(visibilities)].append(chat_id)
+
+    return or_(
+        *(
+            and_(
+                Message.chat_id.in_(chat_ids),
+                Message.visibility.in_(visibilities),
+            )
+            for visibilities, chat_ids in chat_ids_by_visibilities.items()
+        )
+    )
+
+
 async def get_last_message_at_by_chat(
     db: AsyncSession,
     scope: CompanyScope,
@@ -359,36 +414,82 @@ async def get_last_message_at_by_chat(
     every time staff said something the end client cannot read — announcing the
     Staff-only Message without quoting it.
 
-    Chats are grouped by the set of visibilities rather than given a clause
-    each: a single reader has at most one set per Chat type, so the OR stays
-    two branches wide however long the list is.
+    The filter itself is `in_a_chat_the_reader_may_see_it_in`, shared with the
+    unread count: those are the two ways a Staff-only Message could reach an end
+    client's list, and they ask one clause rather than each writing their own.
     """
     if not visible:
         return {}
 
-    chat_ids_by_visibilities: dict[tuple[MessageVisibility, ...], list[uuid.UUID]] = (
-        defaultdict(list)
-    )
-    for chat_id, visibilities in visible.items():
-        chat_ids_by_visibilities[tuple(visibilities)].append(chat_id)
-
     result = await db.execute(
         scope.select(Message)
         .with_only_columns(Message.chat_id, func.max(Message.created_at))
-        .where(
-            or_(
-                *(
-                    and_(
-                        Message.chat_id.in_(chat_ids),
-                        Message.visibility.in_(visibilities),
-                    )
-                    for visibilities, chat_ids in chat_ids_by_visibilities.items()
-                )
-            )
-        )
+        .where(in_a_chat_the_reader_may_see_it_in(visible))
         .group_by(Message.chat_id)
     )
     return dict(result.all())
+
+
+async def unread_counts(
+    db: AsyncSession,
+    scope: CompanyScope,
+    visible: Mapping[uuid.UUID, Sequence[MessageVisibility]],
+    *,
+    for_user: uuid.UUID | None = None,
+) -> dict[tuple[uuid.UUID, uuid.UUID], int]:
+    """How much each Participant of these Chats has not read, keyed by both.
+
+    Three conditions make a Message unread, and all three are in the join rather
+    than applied afterwards, so the count is the database's answer and not a
+    list this service filtered:
+
+    - it arrived after that Participant's watermark, which comes off their own
+      row — the thresholds differ per Participant, so the watermark is joined
+      rather than passed in;
+    - somebody else said it, because sending is having read it — a Chat nobody
+      has replied to would otherwise sit in the sender's own list with a badge
+      for their own messages;
+    - that Participant may read it. Taking the visibilities rather than bare
+      identifiers is what keeps a Staff-only Message out of an end client's
+      count: the end client is told nothing about one, and a badge that went up
+      for a message they will never be shown tells them one is there.
+
+    The join is an outer one and the answer covers every Participant asked
+    about, including the ones with nothing unread. A missing key would mean
+    "nobody has spoken here", which a caller would have to translate into zero —
+    and the translation is the kind of thing one of two call sites forgets.
+    """
+    if not visible:
+        return {}
+
+    unread = and_(
+        # Message is scoped by hand because the query is constructed over
+        # Participant: both sides of a join have to answer to the boundary, and
+        # only the entity `scope.select` was given carries it automatically.
+        Message.company_id == scope.company_id,
+        Message.chat_id == Participant.chat_id,
+        Message.sender_id.is_distinct_from(Participant.user_id),
+        or_(
+            Participant.last_read_at.is_(None),
+            Message.created_at > Participant.last_read_at,
+        ),
+        in_a_chat_the_reader_may_see_it_in(visible),
+    )
+
+    counted = (
+        scope.select(Participant)
+        .with_only_columns(
+            Participant.chat_id, Participant.user_id, func.count(Message.id)
+        )
+        .outerjoin(Message, unread)
+        .where(Participant.chat_id.in_(visible), STILL_IN_THE_CHAT)
+        .group_by(Participant.chat_id, Participant.user_id)
+    )
+    if for_user is not None:
+        counted = counted.where(Participant.user_id == for_user)
+
+    result = await db.execute(counted)
+    return {(chat_id, user_id): count for chat_id, user_id, count in result.all()}
 
 
 async def enqueue_chat_summaries(
@@ -418,18 +519,28 @@ async def enqueue_chat_summaries(
         participants_by_role[participant.role].append(participant)
 
     for role, participants in participants_by_role.items():
-        last_message_at = await get_last_message_at_by_chat(
-            db,
-            scope,
-            {
-                chat_id: readable_visibilities(
-                    reader_kind=role,
-                    reader_company_id=chat.company_id,
-                    chat_company_id=chat.company_id,
-                    chat_type=chat.type,
-                )
-            },
-        )
-        payload = ChatRead.of(chat, last_message_at.get(chat_id)).model_dump_json()
+        visible = {
+            chat_id: readable_visibilities(
+                reader_kind=role,
+                reader_company_id=chat.company_id,
+                chat_company_id=chat.company_id,
+                chat_type=chat.type,
+            )
+        }
+        last_message_at = await get_last_message_at_by_chat(db, scope, visible)
+        # The unread count is the one part of the summary that is not shared by
+        # a role: it is read off each Participant's own watermark. One query per
+        # role still answers for all of them, so the cost stays what the
+        # grouping bought — an aggregate per role, not one per Participant.
+        unread = await unread_counts(db, scope, visible)
         for participant in participants:
-            enqueue(db, address_for_user(chat.company_id, participant.user_id), payload)
+            enqueue(
+                db,
+                address_for_user(chat.company_id, participant.user_id),
+                ChatRead.of(
+                    chat,
+                    last_message_at.get(chat_id),
+                    unread.get((chat_id, participant.user_id), 0),
+                    participant,
+                ).model_dump_json(),
+            )

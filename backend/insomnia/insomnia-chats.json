@@ -1,286 +1,499 @@
 {
   "_type": "export",
   "__export_format": 4,
-  "__export_date": "2026-08-05T00:00:00.000Z",
-  "__export_source": "manual:chat-app-ticket-04",
+  "__export_date": "2026-09-24T00:00:00.000Z",
+  "__export_source": "manual:chat-service-ticket-09",
   "resources": [
     {
-      "_id": "wrk_chatapp",
+      "_id": "wrk_chat",
       "_type": "workspace",
-      "name": "Chat App — Ticket 04 (Chats)",
-      "description": "Auth (ticket 03) + Chats (ticket 04) manual test flow.",
+      "name": "Chat Service — Composição e lista de Chats",
+      "description": "Ingress interna de composição (ticket 05) e a lista de Chats do chamador (tickets 09/10). Tokens vêm de scripts/mint_chat_token.py, não de um login.",
       "scope": "collection"
     },
     {
       "_id": "env_base",
       "_type": "environment",
-      "parentId": "wrk_chatapp",
+      "parentId": "wrk_chat",
       "name": "Base Environment",
       "data": {
         "base_url": "http://localhost:8000",
+        "ws_base_url": "ws://localhost:8000",
+        "service_token": "change-me",
+        "company_id": "11111111-1111-1111-1111-111111111111",
+        "chat_id": "",
+        "client_chat_id": "",
+        "message_id": "",
+        "cursor": "",
+        "user_a_id": "",
+        "user_b_id": "",
+        "user_c_id": "",
+        "user_d_id": "",
+        "user_e_id": "",
         "token_a": "",
         "token_b": "",
         "token_c": "",
         "token_d": "",
-        "user_a_id": "",
-        "user_b_id": "",
-        "user_c_id": "",
-        "user_d_id": ""
+        "token_e": ""
       },
       "isPrivate": false,
       "metaSortKey": 0
     },
     {
-      "_id": "fld_auth",
+      "_id": "fld_setup",
       "_type": "request_group",
-      "parentId": "wrk_chatapp",
-      "name": "01 - Auth (register + login 4 users)",
-      "description": "Run in order. After each register, copy the response `id` into the matching user_x_id env var. After each login, copy `access_token` into the matching token_x env var. User D never gets added to a chat — it exists to prove isolation.",
+      "parentId": "wrk_chat",
+      "name": "00 - Setup (leia primeiro)",
+      "description": "Não existe login neste serviço: o monolito é o único emissor de chat token (ticket 01), então não há request que devolva um. Antes de rodar qualquer pasta:\n\n    cd backend\n    uv run python -m scripts.mint_chat_token --insomnia\n\nCole a saída no Base Environment. Ela traz os cinco usuários (A-D staff, E cliente final), os tokens deles, o `service_token` e o `company_id`. D nunca entra em Chat nenhum — existe para que \"não vê nada\" seja afirmado por alguém real, e não por um banco vazio. E é o cliente final, para a Staff-only Message ter de quem ser escondida.\n\nOs tokens valem 12h por padrão (`--minutes`). Expirado, rode de novo.",
       "metaSortKey": 0
     },
     {
-      "_id": "req_register_a",
+      "_id": "req_health",
       "_type": "request",
-      "parentId": "fld_auth",
-      "name": "Register User A (ana)",
-      "method": "POST",
-      "url": "{{ _.base_url }}/auth/register",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"email\": \"ana@example.com\",\n  \"username\": \"ana\",\n  \"password\": \"Senha-Forte-123\"\n}"
-      },
-      "headers": [{ "name": "Content-Type", "value": "application/json" }],
-      "description": "Copy response `id` -> env `user_a_id`.",
+      "parentId": "fld_setup",
+      "name": "Health",
+      "method": "GET",
+      "url": "{{ _.base_url }}/health",
+      "description": "Sem autenticação. Espere 200 {\"status\": \"ok\"}.",
       "metaSortKey": 0
     },
     {
-      "_id": "req_register_b",
+      "_id": "req_me",
       "_type": "request",
-      "parentId": "fld_auth",
-      "name": "Register User B (beto)",
-      "method": "POST",
-      "url": "{{ _.base_url }}/auth/register",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"email\": \"beto@example.com\",\n  \"username\": \"beto\",\n  \"password\": \"Senha-Forte-123\"\n}"
-      },
-      "headers": [{ "name": "Content-Type", "value": "application/json" }],
-      "description": "Copy response `id` -> env `user_b_id`.",
-      "metaSortKey": 1
-    },
-    {
-      "_id": "req_register_c",
-      "_type": "request",
-      "parentId": "fld_auth",
-      "name": "Register User C (carla)",
-      "method": "POST",
-      "url": "{{ _.base_url }}/auth/register",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"email\": \"carla@example.com\",\n  \"username\": \"carla\",\n  \"password\": \"Senha-Forte-123\"\n}"
-      },
-      "headers": [{ "name": "Content-Type", "value": "application/json" }],
-      "description": "Copy response `id` -> env `user_c_id`.",
-      "metaSortKey": 2
-    },
-    {
-      "_id": "req_register_d",
-      "_type": "request",
-      "parentId": "fld_auth",
-      "name": "Register User D (davi, no chats)",
-      "method": "POST",
-      "url": "{{ _.base_url }}/auth/register",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"email\": \"davi@example.com\",\n  \"username\": \"davi\",\n  \"password\": \"Senha-Forte-123\"\n}"
-      },
-      "headers": [{ "name": "Content-Type", "value": "application/json" }],
-      "description": "Copy response `id` -> env `user_d_id`. This user is never added to any chat.",
-      "metaSortKey": 3
-    },
-    {
-      "_id": "req_login_a",
-      "_type": "request",
-      "parentId": "fld_auth",
-      "name": "Login User A",
-      "method": "POST",
-      "url": "{{ _.base_url }}/auth/login",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"email\": \"ana@example.com\",\n  \"password\": \"Senha-Forte-123\"\n}"
-      },
-      "headers": [{ "name": "Content-Type", "value": "application/json" }],
-      "description": "Copy response `access_token` -> env `token_a`.",
-      "metaSortKey": 4
-    },
-    {
-      "_id": "req_login_b",
-      "_type": "request",
-      "parentId": "fld_auth",
-      "name": "Login User B",
-      "method": "POST",
-      "url": "{{ _.base_url }}/auth/login",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"email\": \"beto@example.com\",\n  \"password\": \"Senha-Forte-123\"\n}"
-      },
-      "headers": [{ "name": "Content-Type", "value": "application/json" }],
-      "description": "Copy response `access_token` -> env `token_b`.",
-      "metaSortKey": 5
-    },
-    {
-      "_id": "req_login_c",
-      "_type": "request",
-      "parentId": "fld_auth",
-      "name": "Login User C",
-      "method": "POST",
-      "url": "{{ _.base_url }}/auth/login",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"email\": \"carla@example.com\",\n  \"password\": \"Senha-Forte-123\"\n}"
-      },
-      "headers": [{ "name": "Content-Type", "value": "application/json" }],
-      "description": "Copy response `access_token` -> env `token_c`.",
-      "metaSortKey": 6
-    },
-    {
-      "_id": "req_login_d",
-      "_type": "request",
-      "parentId": "fld_auth",
-      "name": "Login User D",
-      "method": "POST",
-      "url": "{{ _.base_url }}/auth/login",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"email\": \"davi@example.com\",\n  \"password\": \"Senha-Forte-123\"\n}"
-      },
-      "headers": [{ "name": "Content-Type", "value": "application/json" }],
-      "description": "Copy response `access_token` -> env `token_d`.",
-      "metaSortKey": 7
-    },
-    {
-      "_id": "req_me_a",
-      "_type": "request",
-      "parentId": "fld_auth",
-      "name": "Me (sanity check for token_a)",
+      "parentId": "fld_setup",
+      "name": "Me (confere o token_a)",
       "method": "GET",
       "url": "{{ _.base_url }}/auth/me",
-      "headers": [{ "name": "Authorization", "value": "Bearer {{ _.token_a }}" }],
-      "description": "Should return User A's own profile. Note: Insomnia's OAuth2/'Authorize' UI won't work against this API since /auth/login expects JSON, not form-urlencoded — use this Bearer header pattern instead.",
-      "metaSortKey": 8
+      "description": "Devolve o que o token afirma: id, company_id, user_kind, scopes, display_name. O serviço não tem tabela de usuário — isto é o token lido de volta, não um perfil consultado. 401 aqui significa token expirado ou JWT_SECRET_KEY diferente do que assinou.",
+      "metaSortKey": 1,
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token_a }}"
+        }
+      ]
     },
     {
-      "_id": "fld_chats",
+      "_id": "fld_comp",
       "_type": "request_group",
-      "parentId": "wrk_chatapp",
-      "name": "02 - Chats (ticket 04)",
-      "description": "Run after the Auth folder so token_x/user_x_id env vars are filled in.",
+      "parentId": "wrk_chat",
+      "name": "01 - Composição (ingress interna, ticket 05)",
+      "description": "Criar Chat e adicionar/remover Participant deixaram de ser pedidos do browser: o monolito valida contra dado vivo e então chama o serviço (ADR-0010). Todas exigem o `service_token` E os dois headers de acting user. A identidade completa viaja no comando (ticket 06) porque o serviço não tem onde consultar nome.",
       "metaSortKey": 1
     },
     {
       "_id": "req_create_1to1",
       "_type": "request",
-      "parentId": "fld_chats",
-      "name": "Create 1:1 chat (A -> B)",
+      "parentId": "fld_comp",
+      "name": "Criar 1:1 (A -> B)",
       "method": "POST",
-      "url": "{{ _.base_url }}/chats",
+      "url": "{{ _.base_url }}/internal/chats",
+      "description": "Espere 201, name: null, participant_user_ids com A e B. Copie o `id` -> env `chat_id`.",
+      "metaSortKey": 0,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.service_token }}"
+        },
+        {
+          "name": "X-Acting-User",
+          "value": "{{ _.user_a_id }}"
+        },
+        {
+          "name": "X-Acting-Company",
+          "value": "{{ _.company_id }}"
+        }
+      ],
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"type\": \"staff\",\n  \"participants\": [{ \"user_id\": \"{{ _.user_b_id }}\", \"user_kind\": \"staff\" }]\n}"
-      },
-      "headers": [
-        { "name": "Content-Type", "value": "application/json" },
-        { "name": "Authorization", "value": "Bearer {{ _.token_a }}" }
-      ],
-      "description": "Expect 201, name: null, participant_user_ids containing A and B.",
-      "metaSortKey": 0
+        "text": "{\n  \"type\": \"staff\",\n  \"participants\": [\n    { \"user_id\": \"{{ _.user_a_id }}\", \"company_id\": \"{{ _.company_id }}\", \"user_kind\": \"staff\", \"display_name\": \"Ana Souza\" },\n    { \"user_id\": \"{{ _.user_b_id }}\", \"company_id\": \"{{ _.company_id }}\", \"user_kind\": \"staff\", \"display_name\": \"Beto Lima\" }\n  ]\n}"
+      }
     },
     {
       "_id": "req_create_1to1_dup",
       "_type": "request",
-      "parentId": "fld_chats",
-      "name": "Create 1:1 again (idempotency check)",
+      "parentId": "fld_comp",
+      "name": "Criar 1:1 de novo (idempotência)",
       "method": "POST",
-      "url": "{{ _.base_url }}/chats",
+      "url": "{{ _.base_url }}/internal/chats",
+      "description": "Espere 201 com o MESMO `id` da anterior — composição chega at-least-once e um 1:1 entre as mesmas duas pessoas é o mesmo Chat reaberto (ADR-0002).",
+      "metaSortKey": 1,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.service_token }}"
+        },
+        {
+          "name": "X-Acting-User",
+          "value": "{{ _.user_a_id }}"
+        },
+        {
+          "name": "X-Acting-Company",
+          "value": "{{ _.company_id }}"
+        }
+      ],
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"type\": \"staff\",\n  \"participants\": [{ \"user_id\": \"{{ _.user_b_id }}\", \"user_kind\": \"staff\" }]\n}"
-      },
-      "headers": [
-        { "name": "Content-Type", "value": "application/json" },
-        { "name": "Authorization", "value": "Bearer {{ _.token_a }}" }
-      ],
-      "description": "Expect 201 with the SAME `id` as the previous request — proves idempotent creation (ADR-0002).",
-      "metaSortKey": 1
+        "text": "{\n  \"type\": \"staff\",\n  \"participants\": [\n    { \"user_id\": \"{{ _.user_a_id }}\", \"company_id\": \"{{ _.company_id }}\", \"user_kind\": \"staff\", \"display_name\": \"Ana Souza\" },\n    { \"user_id\": \"{{ _.user_b_id }}\", \"company_id\": \"{{ _.company_id }}\", \"user_kind\": \"staff\", \"display_name\": \"Beto Lima\" }\n  ]\n}"
+      }
     },
     {
       "_id": "req_create_group",
       "_type": "request",
-      "parentId": "fld_chats",
-      "name": "Create group chat (A, B, C)",
+      "parentId": "fld_comp",
+      "name": "Criar grupo (A, B, C)",
       "method": "POST",
-      "url": "{{ _.base_url }}/chats",
+      "url": "{{ _.base_url }}/internal/chats",
+      "description": "Espere 201, name 'Trio'. Criar grupo NÃO é idempotente (dívida conhecida): reenviar cria um segundo Chat.",
+      "metaSortKey": 2,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.service_token }}"
+        },
+        {
+          "name": "X-Acting-User",
+          "value": "{{ _.user_a_id }}"
+        },
+        {
+          "name": "X-Acting-Company",
+          "value": "{{ _.company_id }}"
+        }
+      ],
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"type\": \"staff\",\n  \"participants\": [{ \"user_id\": \"{{ _.user_b_id }}\", \"user_kind\": \"staff\" }, { \"user_id\": \"{{ _.user_c_id }}\", \"user_kind\": \"staff\" }],\n  \"name\": \"Trio\"\n}"
-      },
-      "headers": [
-        { "name": "Content-Type", "value": "application/json" },
-        { "name": "Authorization", "value": "Bearer {{ _.token_a }}" }
-      ],
-      "description": "Expect 201, name: 'Trio', participant_user_ids containing A, B and C.",
-      "metaSortKey": 2
+        "text": "{\n  \"type\": \"staff\",\n  \"participants\": [\n    { \"user_id\": \"{{ _.user_a_id }}\", \"company_id\": \"{{ _.company_id }}\", \"user_kind\": \"staff\", \"display_name\": \"Ana Souza\" },\n    { \"user_id\": \"{{ _.user_b_id }}\", \"company_id\": \"{{ _.company_id }}\", \"user_kind\": \"staff\", \"display_name\": \"Beto Lima\" },\n    { \"user_id\": \"{{ _.user_c_id }}\", \"company_id\": \"{{ _.company_id }}\", \"user_kind\": \"staff\", \"display_name\": \"Carla Dias\" }\n  ],\n  \"name\": \"Trio\"\n}"
+      }
     },
     {
       "_id": "req_create_group_no_name",
       "_type": "request",
-      "parentId": "fld_chats",
-      "name": "Create group WITHOUT name (expect 422)",
+      "parentId": "fld_comp",
+      "name": "Grupo SEM nome (espere 422)",
       "method": "POST",
-      "url": "{{ _.base_url }}/chats",
+      "url": "{{ _.base_url }}/internal/chats",
+      "description": "3+ Participants sem nome é grupo sem nome. Espere 422.",
+      "metaSortKey": 3,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.service_token }}"
+        },
+        {
+          "name": "X-Acting-User",
+          "value": "{{ _.user_a_id }}"
+        },
+        {
+          "name": "X-Acting-Company",
+          "value": "{{ _.company_id }}"
+        }
+      ],
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"type\": \"staff\",\n  \"participants\": [{ \"user_id\": \"{{ _.user_b_id }}\", \"user_kind\": \"staff\" }, { \"user_id\": \"{{ _.user_c_id }}\", \"user_kind\": \"staff\" }]\n}"
-      },
+        "text": "{\n  \"type\": \"staff\",\n  \"participants\": [\n    { \"user_id\": \"{{ _.user_a_id }}\", \"company_id\": \"{{ _.company_id }}\", \"user_kind\": \"staff\", \"display_name\": \"Ana Souza\" },\n    { \"user_id\": \"{{ _.user_b_id }}\", \"company_id\": \"{{ _.company_id }}\", \"user_kind\": \"staff\", \"display_name\": \"Beto Lima\" },\n    { \"user_id\": \"{{ _.user_c_id }}\", \"company_id\": \"{{ _.company_id }}\", \"user_kind\": \"staff\", \"display_name\": \"Carla Dias\" }\n  ]\n}"
+      }
+    },
+    {
+      "_id": "req_create_client_chat",
+      "_type": "request",
+      "parentId": "fld_comp",
+      "name": "Criar Client Chat (A, B, E)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/internal/chats",
+      "description": "Copie o `id` -> env `client_chat_id`. É este o Chat onde a Staff-only Message tem sentido — na coleção de mensagens.",
+      "metaSortKey": 4,
       "headers": [
-        { "name": "Content-Type", "value": "application/json" },
-        { "name": "Authorization", "value": "Bearer {{ _.token_a }}" }
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.service_token }}"
+        },
+        {
+          "name": "X-Acting-User",
+          "value": "{{ _.user_a_id }}"
+        },
+        {
+          "name": "X-Acting-Company",
+          "value": "{{ _.company_id }}"
+        }
       ],
-      "description": "3+ participants with no name must be rejected. Expect 422.",
-      "metaSortKey": 3
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"type\": \"client\",\n  \"participants\": [\n    { \"user_id\": \"{{ _.user_a_id }}\", \"company_id\": \"{{ _.company_id }}\", \"user_kind\": \"staff\", \"display_name\": \"Ana Souza\" },\n    { \"user_id\": \"{{ _.user_b_id }}\", \"company_id\": \"{{ _.company_id }}\", \"user_kind\": \"staff\", \"display_name\": \"Beto Lima\" },\n    { \"user_id\": \"{{ _.user_e_id }}\", \"company_id\": \"{{ _.company_id }}\", \"user_kind\": \"client\", \"display_name\": \"Elena Cliente\" }\n  ],\n  \"name\": \"Cliente e equipe\"\n}"
+      }
+    },
+    {
+      "_id": "req_create_client_in_staff",
+      "_type": "request",
+      "parentId": "fld_comp",
+      "name": "Cliente final em Staff Chat (espere 422)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/internal/chats",
+      "description": "Um Staff Chat é um Chat em que todos são da Company. Espere 422.",
+      "metaSortKey": 5,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.service_token }}"
+        },
+        {
+          "name": "X-Acting-User",
+          "value": "{{ _.user_a_id }}"
+        },
+        {
+          "name": "X-Acting-Company",
+          "value": "{{ _.company_id }}"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"type\": \"staff\",\n  \"participants\": [\n    { \"user_id\": \"{{ _.user_a_id }}\", \"company_id\": \"{{ _.company_id }}\", \"user_kind\": \"staff\", \"display_name\": \"Ana Souza\" },\n    { \"user_id\": \"{{ _.user_e_id }}\", \"company_id\": \"{{ _.company_id }}\", \"user_kind\": \"client\", \"display_name\": \"Elena Cliente\" }\n  ]\n}"
+      }
+    },
+    {
+      "_id": "req_create_foreign",
+      "_type": "request",
+      "parentId": "fld_comp",
+      "name": "Participant de outra Company (espere 422)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/internal/chats",
+      "description": "O comando carrega a Company de cada Participant e o serviço arquiva todos sob a que ele age. Divergir seria um Chat cujos membros respondem a outra fronteira que o próprio Chat. Espere 422.",
+      "metaSortKey": 6,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.service_token }}"
+        },
+        {
+          "name": "X-Acting-User",
+          "value": "{{ _.user_a_id }}"
+        },
+        {
+          "name": "X-Acting-Company",
+          "value": "{{ _.company_id }}"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"type\": \"staff\",\n  \"participants\": [\n    { \"user_id\": \"{{ _.user_a_id }}\", \"company_id\": \"{{ _.company_id }}\", \"user_kind\": \"staff\", \"display_name\": \"Ana Souza\" },\n    { \"user_id\": \"{{ _.user_b_id }}\", \"company_id\": \"99999999-9999-9999-9999-999999999999\", \"user_kind\": \"staff\", \"display_name\": \"De fora\" }\n  ]\n}"
+      }
+    },
+    {
+      "_id": "req_create_no_acting",
+      "_type": "request",
+      "parentId": "fld_comp",
+      "name": "Sem headers de acting user (espere 401)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/internal/chats",
+      "description": "Não existe Chat sem autor. É isto que impede a credencial de serviço de virar onipotente: ela não amplia o que pode ser feito, só permite agir por alguém nomeado. Espere 401.",
+      "metaSortKey": 7,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.service_token }}"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"type\": \"staff\",\n  \"participants\": [\n    { \"user_id\": \"{{ _.user_a_id }}\", \"company_id\": \"{{ _.company_id }}\", \"user_kind\": \"staff\", \"display_name\": \"Ana Souza\" },\n    { \"user_id\": \"{{ _.user_b_id }}\", \"company_id\": \"{{ _.company_id }}\", \"user_kind\": \"staff\", \"display_name\": \"Beto Lima\" }\n  ]\n}"
+      }
+    },
+    {
+      "_id": "req_create_no_service",
+      "_type": "request",
+      "parentId": "fld_comp",
+      "name": "Sem credencial de serviço (espere 401)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/internal/chats",
+      "description": "Espere 401. Um chat token de usuário também não serve aqui — estas rotas não são públicas.",
+      "metaSortKey": 8,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "X-Acting-User",
+          "value": "{{ _.user_a_id }}"
+        },
+        {
+          "name": "X-Acting-Company",
+          "value": "{{ _.company_id }}"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"type\": \"staff\",\n  \"participants\": [\n    { \"user_id\": \"{{ _.user_a_id }}\", \"company_id\": \"{{ _.company_id }}\", \"user_kind\": \"staff\", \"display_name\": \"Ana Souza\" },\n    { \"user_id\": \"{{ _.user_b_id }}\", \"company_id\": \"{{ _.company_id }}\", \"user_kind\": \"staff\", \"display_name\": \"Beto Lima\" }\n  ]\n}"
+      }
+    },
+    {
+      "_id": "req_add",
+      "_type": "request",
+      "parentId": "fld_comp",
+      "name": "Adicionar C ao 1:1 (vira grupo, precisa de nome)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/internal/chats/{{ _.chat_id }}/participants",
+      "description": "O nome viaja junto porque o terceiro Participant transforma o 1:1 em grupo, e grupo carrega nome — um ato de composição, não dois. Reenviar é silencioso: o comando já tinha dado certo.",
+      "metaSortKey": 9,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.service_token }}"
+        },
+        {
+          "name": "X-Acting-User",
+          "value": "{{ _.user_a_id }}"
+        },
+        {
+          "name": "X-Acting-Company",
+          "value": "{{ _.company_id }}"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"participant\": { \"user_id\": \"{{ _.user_c_id }}\", \"company_id\": \"{{ _.company_id }}\", \"user_kind\": \"staff\", \"display_name\": \"Carla Dias\" },\n  \"name\": \"Agora somos tres\"\n}"
+      }
+    },
+    {
+      "_id": "req_remove",
+      "_type": "request",
+      "parentId": "fld_comp",
+      "name": "Remover C",
+      "method": "DELETE",
+      "url": "{{ _.base_url }}/internal/chats/{{ _.chat_id }}/participants/{{ _.user_c_id }}",
+      "description": "Sair é um instante, não um delete: a linha fica com `left_at` preenchido, as mensagens de C seguem atribuíveis. Remover de novo NÃO move o instante — redelivery não é uma segunda saída.",
+      "metaSortKey": 10,
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.service_token }}"
+        },
+        {
+          "name": "X-Acting-User",
+          "value": "{{ _.user_a_id }}"
+        },
+        {
+          "name": "X-Acting-Company",
+          "value": "{{ _.company_id }}"
+        }
+      ]
+    },
+    {
+      "_id": "fld_list",
+      "_type": "request_group",
+      "parentId": "wrk_chat",
+      "name": "02 - Lista de Chats (tickets 09/10)",
+      "description": "Rota pública, com o chat token de cada pessoa. Ordenada por última atividade; um Chat em que ninguém falou ordena como se fosse a epoch.",
+      "metaSortKey": 2
     },
     {
       "_id": "req_list_a",
       "_type": "request",
-      "parentId": "fld_chats",
-      "name": "List chats as A",
+      "parentId": "fld_list",
+      "name": "Listar como A",
       "method": "GET",
       "url": "{{ _.base_url }}/chats",
-      "headers": [{ "name": "Authorization", "value": "Bearer {{ _.token_a }}" }],
-      "description": "Expect the 1:1 (A,B) and the group (A,B,C) — 2 chats.",
-      "metaSortKey": 4
+      "description": "Cada item traz last_message_at, unread_count, last_read_at e last_read_message_id — os quatro são relativos a QUEM pergunta. Compare com a mesma lista vista por B.",
+      "metaSortKey": 0,
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token_a }}"
+        }
+      ]
     },
     {
-      "_id": "req_list_c",
+      "_id": "req_list_b",
       "_type": "request",
-      "parentId": "fld_chats",
-      "name": "List chats as C",
+      "parentId": "fld_list",
+      "name": "Listar como B",
       "method": "GET",
       "url": "{{ _.base_url }}/chats",
-      "headers": [{ "name": "Authorization", "value": "Bearer {{ _.token_c }}" }],
-      "description": "Expect only the group chat (C is not part of the A/B 1:1) — 1 chat.",
-      "metaSortKey": 5
+      "description": "Mesmos Chats, unread_count diferente: a contagem sai da marca d'água da linha de B, não do Chat.",
+      "metaSortKey": 1,
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token_b }}"
+        }
+      ]
+    },
+    {
+      "_id": "req_list_e",
+      "_type": "request",
+      "parentId": "fld_list",
+      "name": "Listar como E (cliente final)",
+      "method": "GET",
+      "url": "{{ _.base_url }}/chats",
+      "description": "Só o Client Chat. E o unread_count dele nunca conta uma Staff-only Message — nem o last_message_at se mexe por causa de uma.",
+      "metaSortKey": 2,
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token_e }}"
+        }
+      ]
     },
     {
       "_id": "req_list_d",
       "_type": "request",
-      "parentId": "fld_chats",
-      "name": "List chats as D (isolation check)",
+      "parentId": "fld_list",
+      "name": "Listar como D (isolamento)",
       "method": "GET",
       "url": "{{ _.base_url }}/chats",
-      "headers": [{ "name": "Authorization", "value": "Bearer {{ _.token_d }}" }],
-      "description": "D was never added to any chat. Expect an empty array `[]` — proves isolation.",
-      "metaSortKey": 6
+      "description": "D nunca entrou em Chat nenhum. Espere `[]`.",
+      "metaSortKey": 3,
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token_d }}"
+        }
+      ]
+    },
+    {
+      "_id": "req_list_no_token",
+      "_type": "request",
+      "parentId": "fld_list",
+      "name": "Listar sem token (espere 401)",
+      "method": "GET",
+      "url": "{{ _.base_url }}/chats",
+      "description": "Espere 401.",
+      "metaSortKey": 4
     }
   ]
 }

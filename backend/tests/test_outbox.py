@@ -82,7 +82,7 @@ async def test_a_send_that_fails_midway_leaves_neither_the_message_nor_its_annou
 
     backlog = await client.get(f"/chats/{chat_id}/messages", headers=headers_a)
 
-    assert backlog.json() == []
+    assert backlog.json()["messages"] == []
     assert await drain_once(db_session) == 0
 
 

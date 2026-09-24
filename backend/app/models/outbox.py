@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, Text, func
+from sqlalchemy import DateTime, Index, String, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.company_scope import CompanyScoped
@@ -28,6 +28,25 @@ class OutboxEvent(Base, CompanyScoped):
     """
 
     __tablename__ = "outbox"
+    __table_args__ = (
+        # The index the drain scans on, declared here as well as in migration
+        # `e4a91b7c25d8`. It is partial on purpose: the drain only ever asks for
+        # the oldest *unpublished* row, and published rows are kept rather than
+        # deleted, so an index over the whole table would grow with the history
+        # while the part being searched stays small.
+        #
+        # A model that does not carry its own indexes is worse than untidy here.
+        # `alembic revision --autogenerate` compares models against the database
+        # and emits the difference, so an index the models do not mention reads
+        # as one somebody dropped — and the next autogenerate proposes deleting
+        # it. That is how a realtime index disappears in a migration nobody
+        # wrote on purpose.
+        Index(
+            "ix_outbox_pending",
+            "created_at",
+            postgresql_where=text("published_at IS NULL"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     address: Mapped[str] = mapped_column(String)

@@ -118,6 +118,6 @@ async def a_chat_with_one_message(
         read = await client.get(
             f"/chats/{chat_id}/messages", headers=bearer(reader_token)
         )
-        return [message["sender_display_name"] for message in read.json()]
+        return [message["sender_display_name"] for message in read.json()["messages"]]
 
     return sender_id, sender_names

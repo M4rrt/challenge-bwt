@@ -1,15 +1,18 @@
 import uuid
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.chat_token import Caller
+from app.core.cursor import InvalidCursorError
 from app.core.company_scope import CompanyScope
 from app.core.security import get_company_scope, get_current_caller
 from app.db import get_db
-from app.schemas.message import MessageCreate, MessageDelete, MessageRead
+from app.schemas.message import MessageCreate, MessageDelete, MessagePage, MessageRead
 from app.services.chat import ChatNotFoundError
 from app.services.message import (
+    DEFAULT_PAGE_LIMIT,
+    MAX_PAGE_LIMIT,
     MessageNotFoundError,
     NotTheAuthorError,
     VisibilityNotAllowedError,
@@ -66,14 +69,27 @@ async def delete(
         raise HTTPException(status_code=403, detail=refused.detail)
 
 
-@router.get("", response_model=list[MessageRead])
+@router.get("", response_model=MessagePage)
 async def list_all(
     chat_id: uuid.UUID,
+    before: str | None = Query(
+        default=None, description="a next_cursor from an earlier page"
+    ),
+    limit: int = Query(default=DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
     caller: Caller = Depends(get_current_caller),
     scope: CompanyScope = Depends(get_company_scope),
     db: AsyncSession = Depends(get_db),
-) -> list[MessageRead]:
+) -> MessagePage:
+    """The newest page of the thread, or the page before the cursor given.
+
+    A cursor this service did not issue is refused rather than ignored. Ignoring
+    it would answer a corrupted scroll position with the top of the thread and
+    say nothing about it — and a client cannot tell that from having genuinely
+    reached the beginning.
+    """
     try:
-        return await list_messages(db, scope, caller, chat_id)
+        return await list_messages(db, scope, caller, chat_id, before=before, limit=limit)
     except ChatNotFoundError:
         raise HTTPException(status_code=404, detail="chat not found")
+    except InvalidCursorError as broken:
+        raise HTTPException(status_code=422, detail=broken.detail)

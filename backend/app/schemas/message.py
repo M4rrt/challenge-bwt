@@ -96,3 +96,20 @@ class MessageRead(BaseModel):
             created_at=message.created_at,
             deleted_at=message.deleted_at,
         )
+
+
+class MessagePage(BaseModel):
+    """One page of a Chat's history, and where the page before it starts.
+
+    The cursor is in the body rather than a header because it is part of the
+    answer, not metadata about it: without it the response does not say whether
+    there is more thread above. `next_cursor` being null is what "you have
+    reached the beginning" means, and it is the only thing that says so.
+
+    A bare array had nowhere to put it. That is the whole of why this type
+    exists — a page of messages is not a list of messages, it is a list of
+    messages and a position.
+    """
+
+    messages: list[MessageRead]
+    next_cursor: str | None = None

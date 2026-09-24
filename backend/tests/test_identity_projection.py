@@ -178,7 +178,7 @@ async def test_adding_a_participant_teaches_the_projection_their_name(
     read_by_b = await client.get(f"/chats/{chat_id}/messages", headers=bearer(token_b))
 
     assert joined.status_code == 200
-    assert [message["sender_display_name"] for message in read_by_b.json()] == [
+    assert [message["sender_display_name"] for message in read_by_b.json()["messages"]] == [
         "Diego Alves"
     ]
 

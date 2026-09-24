@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from app.models.chat import Chat, ChatType, ParticipantRole
+from app.models.chat import Chat, ChatType, Participant, ParticipantRole
 
 
 class ParticipantIdentity(BaseModel):
@@ -52,11 +52,12 @@ class AddParticipantCommand(BaseModel):
 class ChatComposed(BaseModel):
     """A Chat as a command leaves it: what now exists, with no reader in the picture.
 
-    It is `ChatRead` without `last_message_at`, and the omission is the point. That
-    field is reader-relative — it is the timestamp of the last message *this*
-    reader may see — and a command has no reader whose visibility could fill it.
-    Answering a command with `ChatRead` would mean sending a null that cannot be
-    told apart from "nothing has been said here".
+    It is `ChatRead` without its two reader-relative fields, and the omission is
+    the point. `last_message_at` is the timestamp of the last message *this*
+    reader may see; `unread_count` is what sits above *this* reader's watermark.
+    A command has no reader to fill either, and answering one with `ChatRead`
+    would mean sending a null that cannot be told apart from "nothing has been
+    said here" — and a zero that cannot be told apart from "nothing to read".
     """
 
     id: uuid.UUID
@@ -75,14 +76,42 @@ class ChatComposed(BaseModel):
 
 
 class ChatRead(BaseModel):
+    """A Chat as one reader sees it.
+
+    Two of these fields are reader-relative, and both for the same reason: they
+    are computed from what this reader may see and where this reader has got to.
+    `ChatComposed` above carries neither, because a command has no reader.
+
+    `unread_count` defaults to zero rather than being optional. A Chat nobody
+    has spoken in is a Chat with nothing unread, not a Chat whose count is
+    unknown, and a null would leave every client deciding which it meant.
+
+    The read state is here as well as on the response to the request that moved
+    it, because "find where I left off" is asked by a client that did not make
+    that request — one coming back after a reconnect, or on a second device.
+    The count says how much is above the watermark; only these two say where it
+    is. Null on both is a real answer and a different one from zero: it is
+    somebody who has read nothing here, as against somebody who has read the
+    first message.
+    """
+
     id: uuid.UUID
     type: ChatType
     name: str | None
     participant_user_ids: list[uuid.UUID]
     last_message_at: datetime | None = None
+    unread_count: int = 0
+    last_read_at: datetime | None = None
+    last_read_message_id: uuid.UUID | None = None
 
     @classmethod
-    def of(cls, chat: Chat, last_message_at: datetime | None = None) -> "ChatRead":
+    def of(
+        cls,
+        chat: Chat,
+        last_message_at: datetime | None = None,
+        unread_count: int = 0,
+        read_by: Participant | None = None,
+    ) -> "ChatRead":
         """The one place a Chat becomes a response.
 
         The list endpoint, the create endpoint and the live chat-list push all
@@ -97,4 +126,7 @@ class ChatRead(BaseModel):
             name=chat.name,
             participant_user_ids=[p.user_id for p in chat.current_participants],
             last_message_at=last_message_at,
+            unread_count=unread_count,
+            last_read_at=read_by.last_read_at if read_by else None,
+            last_read_message_id=read_by.last_read_message_id if read_by else None,
         )
