@@ -22,8 +22,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.company_scope import CompanyScope
 from app.models.identity import UserProfile
+from app.models.message import Message
 from app.schemas.chat import ParticipantIdentity
 from app.schemas.identity import IdentitySnapshot
+from app.schemas.message import MessageRead
 
 _CONFLICT_TARGET = ("company_id", "user_id")
 """The unique constraint every write upserts against, named once.
@@ -51,6 +53,35 @@ async def profiles_by_user_id(
         scope.select(UserProfile).where(UserProfile.user_id.in_(wanted))
     )
     return {profile.user_id: profile for profile in result.all()}
+
+
+async def message_responses(
+    db: AsyncSession, scope: CompanyScope, messages: Sequence[Message]
+) -> list[MessageRead]:
+    """These Messages as responses, with every sender's name resolved in one query.
+
+    Resolution happens here rather than at each call site because a message
+    table that stored the sender's name would make an anonymisation in the
+    monolith unreachable — the name is a join, always, and this is where the
+    join is. `MessageRead.of` takes the profile without a default so that a
+    call site cannot quietly send a null instead of going through here.
+
+    It sits beside `profiles_by_user_id` rather than in `services/message.py`,
+    where ticket 09 left it, because the chat list needs it too: a Chat's
+    preview is a Message response like any other, and `services/chat.py` is
+    underneath `services/message.py` in the import graph. Its subject was
+    always the projection — resolving a name is the only thing it does that
+    building a `MessageRead` does not.
+    """
+    profiles = await profiles_by_user_id(
+        db, scope, (message.sender_id for message in messages if message.sender_id)
+    )
+    return [
+        MessageRead.of(
+            message, profiles.get(message.sender_id) if message.sender_id else None
+        )
+        for message in messages
+    ]
 
 
 async def remember_identities(

@@ -228,7 +228,7 @@ async def test_an_end_client_cannot_write_a_staff_only_message(client: AsyncClie
 async def _last_message_at(client: AsyncClient, chat_id: str, headers: dict) -> str | None:
     response = await client.get("/chats", headers=headers)
     assert response.status_code == 200
-    listed = next(chat for chat in response.json() if chat["id"] == chat_id)
+    listed = next(chat for chat in response.json()["chats"] if chat["id"] == chat_id)
     return listed["last_message_at"]
 
 

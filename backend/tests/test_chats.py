@@ -94,7 +94,7 @@ async def test_list_chats_includes_null_last_message_at_when_no_messages(
     response = await client.get("/chats", headers=headers_a)
 
     assert response.status_code == 200
-    assert response.json()[0]["last_message_at"] is None
+    assert response.json()["chats"][0]["last_message_at"] is None
 
 
 async def test_list_chats_reflects_most_recent_message_timestamp(
@@ -113,7 +113,7 @@ async def test_list_chats_reflects_most_recent_message_timestamp(
     response = await client.get("/chats", headers=headers_a)
 
     assert response.status_code == 200
-    assert response.json()[0]["last_message_at"] == message_created_at
+    assert response.json()["chats"][0]["last_message_at"] == message_created_at
 
 
 async def test_list_chats_orders_by_most_recent_message_first(client: AsyncClient):
@@ -136,7 +136,7 @@ async def test_list_chats_orders_by_most_recent_message_first(client: AsyncClien
     response = await client.get("/chats", headers=headers_a)
 
     assert response.status_code == 200
-    assert [c["id"] for c in response.json()] == [newer_id, older_id, no_messages_id]
+    assert [c["id"] for c in response.json()["chats"]] == [newer_id, older_id, no_messages_id]
 
 
 async def test_list_chats_returns_only_own_chats(client: AsyncClient):
@@ -155,7 +155,7 @@ async def test_list_chats_returns_only_own_chats(client: AsyncClient):
     response = await client.get("/chats", headers=headers_b)
 
     assert response.status_code == 200
-    body = response.json()
+    body = response.json()["chats"]
     assert [c["id"] for c in body] == [shared_chat_id]
 
 
@@ -270,8 +270,8 @@ async def test_a_participant_who_left_is_no_longer_a_current_participant(
     reading_after_leaving = await client.get(f"/chats/{chat_id}/messages", headers=bearer(token_b))
     writing_after_leaving = await say(client, chat_id, bearer(token_b), "ainda aqui?")
 
-    assert still_in.json()[0]["participant_user_ids"] == [user_a_id]
-    assert left.json() == []
+    assert still_in.json()["chats"][0]["participant_user_ids"] == [user_a_id]
+    assert left.json()["chats"] == []
     assert reading_after_leaving.status_code == 404
     assert writing_after_leaving.status_code == 404
     assert departed.id is not None, "the row stays; only the membership ended"

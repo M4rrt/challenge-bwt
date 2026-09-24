@@ -17,9 +17,12 @@ give it back unaltered".
 import base64
 import binascii
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import NoReturn
+from typing import NoReturn, TypeVar
+
+T = TypeVar("T")
 
 
 class InvalidCursorError(ValueError):
@@ -92,3 +95,26 @@ def _refuse(cause: Exception | None = None) -> NoReturn:
     actually happens rather than what the call site looks like.
     """
     raise InvalidCursorError(InvalidCursorError.detail) from cause
+
+
+def page_of(found: Sequence[T], limit: int) -> tuple[list[T], bool]:
+    """The rows the caller asked for, and whether there are more behind them.
+
+    Every cursor read here fetches one row more than it was asked for and drops
+    it. That extra row is the whole of how a response knows whether to send a
+    cursor: without it, reaching the end and landing exactly on it are
+    indistinguishable, and the client is left holding a cursor that fetches
+    nothing — with no way to know it has finished until it has asked.
+
+    It is four lines, and it is here rather than written out at each read
+    because the two reads that page — a Chat's history and the chat list — had
+    it twice, along with the argument above. A page shape written twice is a
+    page shape updated once, which is the same reason the visibility rule has
+    one home.
+
+    What it deliberately does not do is build the cursor. Where a page resumes
+    from is the one part that differs: history walks backwards and reverses,
+    the chat list does not, and the pair each encodes comes off different
+    columns. Folding that in would take a callback to hide a single line.
+    """
+    return list(found[:limit]), len(found) > limit

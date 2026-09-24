@@ -359,7 +359,7 @@ async def test_marking_an_older_position_leaves_the_message_it_stopped_at_alone(
 async def _listed(client: AsyncClient, chat_id: str, headers: dict[str, str]) -> dict:
     response = await client.get("/chats", headers=headers)
     assert response.status_code == 200
-    return next(chat for chat in response.json() if chat["id"] == chat_id)
+    return next(chat for chat in response.json()["chats"] if chat["id"] == chat_id)
 
 
 async def test_a_chat_reports_what_the_caller_has_not_read(client: AsyncClient):

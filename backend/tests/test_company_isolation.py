@@ -26,7 +26,7 @@ from app.core.config import settings
 from app.main import app
 from app.models.chat import Participant
 from app.services.outbox import drain_once
-from tests.chats import open_chat
+from tests.chats import chat_ids, open_chat, open_chat_with
 from tests.chat_tokens import OMITTED, bearer, caller_token
 from tests.identities import identity_event, now
 from tests.messages import say
@@ -51,8 +51,8 @@ async def test_chat_list_does_not_cross_company(client: AsyncClient):
     inside = await client.get("/chats", headers=bearer(token_b_in_x))
     outside = await client.get("/chats", headers=bearer(token_b_in_y))
 
-    assert len(inside.json()) == 1
-    assert outside.json() == []
+    assert len(inside.json()["chats"]) == 1
+    assert outside.json()["chats"] == []
 
 
 async def test_message_list_does_not_cross_company(client: AsyncClient):
@@ -324,7 +324,7 @@ async def test_the_unread_count_does_not_cross_company(client: AsyncClient):
 
     listed = (await client.get("/chats", headers=bearer(token_b_in_y))).json()
 
-    assert [(chat["id"], chat["unread_count"]) for chat in listed] == [
+    assert [(chat["id"], chat["unread_count"]) for chat in listed["chats"]] == [
         (in_y.json()["id"], 1)
     ]
 
@@ -460,3 +460,39 @@ async def test_a_display_name_from_another_company_is_never_resolved(client: Asy
     assert [message["sender_display_name"] for message in read_by_b.json()["messages"]] == [
         "Carla Dias"
     ]
+
+
+async def test_the_filter_does_not_match_a_name_from_another_company(
+    client: AsyncClient,
+):
+    """The name filter is a read path too, and it reads the one table keyed twice.
+
+    A profile is keyed by (Company, user), and the filter has to join on both.
+
+    The same user id exists in two Companies and each may describe that person
+    differently. Joined on the user alone, a staff member would find their
+    Chats by typing a name nobody in their Company has ever seen — which is not
+    a row crossing the boundary but something harder to notice, because every
+    Chat that comes back is genuinely theirs and only the reason is wrong.
+    """
+    company_x = uuid.uuid4()
+    company_y = uuid.uuid4()
+    shared_user_id = uuid.uuid4()
+    _, token_in_x = caller_token(company_id=company_x, display_name="Ana Lima")
+    _, token_in_y = caller_token(company_id=company_y, display_name="Ana Lima")
+
+    in_x = (
+        await open_chat_with(
+            client, bearer(token_in_x), str(shared_user_id), called="Bruno Souza"
+        )
+    ).json()["id"]
+    in_y = (
+        await open_chat_with(
+            client, bearer(token_in_y), str(shared_user_id), called="Bruno Andrade"
+        )
+    ).json()["id"]
+
+    assert await chat_ids(client, bearer(token_in_x), search="Souza") == [in_x]
+    assert await chat_ids(client, bearer(token_in_x), search="Andrade") == []
+    assert await chat_ids(client, bearer(token_in_y), search="Andrade") == [in_y]
+    assert await chat_ids(client, bearer(token_in_y), search="Souza") == []

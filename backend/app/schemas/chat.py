@@ -4,6 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from app.models.chat import Chat, ChatType, Participant, ParticipantRole
+from app.schemas.message import MessageRead
 
 
 class ParticipantIdentity(BaseModel):
@@ -99,6 +100,20 @@ class ChatRead(BaseModel):
     type: ChatType
     name: str | None
     participant_user_ids: list[uuid.UUID]
+    last_message: MessageRead | None = None
+    """What was last said here that this reader may read, as the list previews it.
+
+    A third reader-relative field, and the one the other two are read off. Null
+    is a Chat nobody has spoken in — which is not the same as a Chat whose last
+    message has an empty body: that one is a tombstone, and a tombstone is a
+    message.
+
+    The whole response rather than the body alone. A preview that showed text
+    and nothing else could not say who spoke, whether it was taken back, or
+    whether it came from outside — and each of those would arrive later as
+    another field beside this one, describing a message this object already
+    holds.
+    """
     last_message_at: datetime | None = None
     unread_count: int = 0
     last_read_at: datetime | None = None
@@ -108,7 +123,7 @@ class ChatRead(BaseModel):
     def of(
         cls,
         chat: Chat,
-        last_message_at: datetime | None = None,
+        last_message: MessageRead | None = None,
         unread_count: int = 0,
         read_by: Participant | None = None,
     ) -> "ChatRead":
@@ -119,14 +134,37 @@ class ChatRead(BaseModel):
         of the three and the third goes quietly stale — which is how the
         summary pushed over `/websocket/users/me` would start disagreeing with
         the summary the list returns.
+
+        `last_message_at` is derived here rather than passed in, now that the
+        message itself arrives. Taking both would let a caller hand over a
+        timestamp belonging to a different message from the one it previews,
+        and the two would then disagree in a response nothing else explains.
         """
         return cls(
             id=chat.id,
             type=chat.type,
             name=chat.name,
             participant_user_ids=[p.user_id for p in chat.current_participants],
-            last_message_at=last_message_at,
+            last_message=last_message,
+            last_message_at=last_message.created_at if last_message else None,
             unread_count=unread_count,
             last_read_at=read_by.last_read_at if read_by else None,
             last_read_message_id=read_by.last_read_message_id if read_by else None,
         )
+
+
+class ChatPage(BaseModel):
+    """One page of a caller's chat list, and where the page after it starts.
+
+    The same shape `MessagePage` settled on in ticket 09, for the same reason:
+    the cursor is part of the answer rather than metadata about it, and
+    `next_cursor` being null is the only thing that says "there are no more
+    Chats". A page that came back short does not say it — a limit and a
+    remainder can coincide.
+
+    A bare array had nowhere to put it. That is the whole of why this type
+    exists, and why `GET /chats` stopped answering with one.
+    """
+
+    chats: list[ChatRead]
+    next_cursor: str | None = None

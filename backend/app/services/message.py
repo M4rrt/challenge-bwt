@@ -1,5 +1,4 @@
 import uuid
-from collections.abc import Sequence
 from datetime import datetime, timezone
 
 from sqlalchemy import ColumnElement, tuple_
@@ -8,10 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.chat_token import Caller
 from app.core.company_scope import CompanyScope
-from app.core.cursor import decode_cursor, encode_cursor
+from app.core.cursor import decode_cursor, encode_cursor, page_of
 from app.core.message_visibility import may_read, readable_visibilities
 from app.models.chat import STILL_IN_THE_CHAT, Chat, Participant
-from app.models.message import Message, MessageVisibility
+from app.models.message import NEWEST_FIRST, Message, MessageVisibility
 from app.schemas.message import (
     MessageCreate,
     MessageDelete,
@@ -20,34 +19,10 @@ from app.schemas.message import (
     WebhookMessageCreate,
 )
 from app.services.chat import ChatNotFoundError, enqueue_chat_summaries
-from app.services.identity import profiles_by_user_id
+from app.services.identity import message_responses
 from app.services.outbox import enqueue
 from app.services.realtime import Address, address_for_chat, address_for_chat_staff
 
-
-OLDEST_FIRST = (Message.created_at, Message.id)
-"""The total order a Chat's messages are read in, spelled once.
-
-`created_at` alone is a partial order: two messages the clock cannot separate
-share an instant, and their relative order is then whatever the plan happens to
-produce — which can differ between two reads of the same rows.
-
-That is not merely untidy, because the cursor pages over exactly this order. A
-pair that sorts one way on one page and the other way on the next is a message
-skipped or a message served twice. The identifier is the tiebreaker: arbitrary,
-since a v4 uuid says nothing about time, but total and stable, which is the
-whole of what a cursor needs. Every read of a Chat's history orders by this
-tuple, so the ordering and the cursor cannot come to disagree.
-"""
-
-NEWEST_FIRST = tuple(column.desc() for column in OLDEST_FIRST)
-"""The same order, walked from the end — which is where a chat is read from.
-
-A thread opens on what was said last, so the page has to be found by walking
-backwards. Derived from `OLDEST_FIRST` rather than written out, because the two
-directions disagreeing on the tiebreaker is exactly the bug the tiebreaker was
-added to prevent.
-"""
 
 DEFAULT_PAGE_LIMIT = 50
 MAX_PAGE_LIMIT = 200
@@ -130,28 +105,6 @@ async def chat_of_participant(
     if chat is None:
         raise ChatNotFoundError()
     return chat
-
-
-async def message_responses(
-    db: AsyncSession, scope: CompanyScope, messages: Sequence[Message]
-) -> list[MessageRead]:
-    """These Messages as responses, with every sender's name resolved in one query.
-
-    Resolution happens here rather than at each call site because a message
-    table that stored the sender's name would make an anonymisation in the
-    monolith unreachable — the name is a join, always, and this is where the
-    join is. `MessageRead.of` takes the profile without a default so that a
-    fifth call site cannot quietly send a null instead of going through here.
-    """
-    profiles = await profiles_by_user_id(
-        db, scope, (message.sender_id for message in messages if message.sender_id)
-    )
-    return [
-        MessageRead.of(
-            message, profiles.get(message.sender_id) if message.sender_id else None
-        )
-        for message in messages
-    ]
 
 
 async def _message_already_sent(
@@ -419,12 +372,6 @@ async def list_messages(
     the one thing an offset cannot do, and the one thing a chat guarantees will
     be tested.
 
-    One more row than asked for is fetched and then dropped. That extra row is
-    the whole of how the response knows whether to send a cursor: without it,
-    reaching the beginning and landing exactly on it are indistinguishable, and
-    the client is left with a cursor that fetches nothing and no way to know it
-    has finished until it has asked.
-
     Visibility is applied here as it is everywhere else, so a Staff-only Message
     is not merely omitted from an end client's page — it is not in the sequence
     the cursor walks at all, and the page it would have been in is a full page of
@@ -448,14 +395,11 @@ async def list_messages(
             < tuple_(cursor.created_at, cursor.id)
         )
 
-    found = list((await db.scalars(walking_back)).all())
-    page = found[:limit]
+    page, there_is_more = page_of((await db.scalars(walking_back)).all(), limit)
     # Read off the oldest row of the page before reversing, which is where the
     # page before this one resumes from.
     next_cursor = (
-        encode_cursor(page[-1].created_at, page[-1].id)
-        if page and len(found) > limit
-        else None
+        encode_cursor(page[-1].created_at, page[-1].id) if page and there_is_more else None
     )
     page.reverse()
 

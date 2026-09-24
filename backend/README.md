@@ -387,7 +387,7 @@ não separa teriam ordem relativa decidida pelo plano de execução — e podend
 das mesmas linhas. Isso não é só desleixo: o cursor pagina **exatamente sobre essa ordem**, então um par
 que sai de um jeito numa página e do outro na seguinte é uma mensagem pulada ou servida duas vezes. O
 identificador é o desempate: arbitrário (um uuid v4 não diz nada sobre tempo), mas total e estável, que
-é tudo que um cursor precisa. `OLDEST_FIRST` e `NEWEST_FIRST` (`app/services/message.py`) são a única
+é tudo que um cursor precisa. `OLDEST_FIRST` e `NEWEST_FIRST` (`app/models/message.py`) são a única
 grafia dessa ordem, e o segundo é derivado do primeiro — as duas direções discordarem do desempate é
 justamente o bug que o desempate existe para evitar.
 
@@ -482,6 +482,84 @@ O push da lista por WebSocket carrega a mesma contagem. Ele continua agrupado po
 então o custo segue sendo um agregado por papel, não um por Participant.
 
 
+## A lista de Chats: prévia, ordem, cursor e busca por nome
+
+### `GET /chats?search=<texto>&before=<cursor>&limit=<n>`
+
+A resposta deixou de ser um array e passou a ser `{"chats": [...], "next_cursor": "..."}`, pelo mesmo
+motivo que `GET /chats/{id}/messages` mudou no ticket 09: um array não tem onde guardar o cursor, e
+`next_cursor: null` é a única coisa que diz "acabou" — uma página que voltou curta não diz, porque um
+limite e um resto podem coincidir. **Isso quebra o parse `Chat[]` do frontend legado**
+(`frontend/src/lib/api.ts`), que os tickets 16-18 substituem, exatamente como o ticket 09 quebrou o
+parse `Message[]`.
+
+Cada item carrega `last_message` — a **resposta inteira** da última mensagem, não só o texto. Uma
+prévia que só tivesse o corpo não saberia dizer quem falou, se a mensagem foi apagada, ou se veio de
+fora — e cada uma dessas viria depois como mais um campo ao lado, descrevendo uma mensagem que o
+objeto já tem. `last_message_at` é derivado dela em `ChatRead.of`, e não passado à parte: aceitar os
+dois deixaria alguém entregar um timestamp de uma mensagem diferente da que está sendo exibida.
+
+### A ordem é a última atividade, e o cursor percorre ela
+
+Ordenação, filtro e paginação acontecem **no banco**, não em Python. Isso não é preferência de
+desempenho: uma lista ordenada depois da consulta não pode ser paginada, porque a fronteira da página
+teria que ser decidida antes da ordenação que decide o que fica de cada lado dela.
+
+O cursor é o mesmo de `core/cursor.py` — um par `(instante, identificador)` opaco — percorrendo
+`(última atividade, id do Chat)`. Duas consequências que valem dizer:
+
+- **Um Chat em que ninguém falou ordena na época Unix**, atrás de tudo que já foi dito. Precisa de um
+  instante de mentira porque nulo ordena onde o plano quiser, e um cursor sobre uma ordem que o plano
+  escolhe é um cursor que pula linhas. O `COALESCE` em `_last_activity` e o `_activity_of` em Python
+  são a mesma constante escrita duas vezes, e elas têm que concordar até o microssegundo.
+- **O desempate é o id do Chat**, pelo mesmo motivo do desempate das mensagens: todo Chat silencioso
+  compartilha a época, e um cursor sobre uma ordem parcial serve uma linha duas vezes ou a perde.
+
+### Uma linha por Chat, não a coleção inteira
+
+`_last_message_of_each_chat` é um `LATERAL` com `LIMIT 1`, correlacionado no `Chat.id`. Carregar as
+mensagens de cada Chat para ficar com a última lê a história inteira de uma thread para exibir uma
+linha dela — e a conta é paga exatamente pelas Companies para quem essa lista existe, as que têm anos
+de mensagem atrás de cada Chat. `test_the_preview_costs_the_same_whatever_the_list_is_worth` afirma
+isso pela borda: listar cinco Chats custa o mesmo número de statements que listar dois.
+
+O filtro de visibilidade fica **dentro** da subconsulta, não fora. Fora, uma Staff-only Message ainda
+seria a linha mais recente e a prévia do cliente final voltaria vazia em vez de cair para a última
+coisa que ele pode ler — anunciando a Staff-only Message pelo buraco que ela deixou.
+
+### `search`: o nome vem da projeção
+
+Casa com o `display_name` de qualquer **outro** Participant atual OU com o nome do próprio Chat. O
+nome do próprio Chat entra porque é a única coisa que distingue threads de cinco pessoas umas das
+outras (item 21 do spec); quem pergunta fica de fora porque é Participant de todos os Chats da
+própria lista, e casar consigo mesmo responderia "ache a pessoa com quem eu falei" com a lista
+inteira — o que parece o filtro não estar funcionando.
+
+**É este endpoint que faz a projeção de identidade valer o preço dela.** O nome não sai do comando que
+compôs o Chat, nem de token nenhum, nem de uma chamada ao monólito (proibida pela
+[ADR-0010](../docs/adr/0010-no-request-depends-on-the-monolith.md)): é uma coluna neste banco. É a
+única razão pela qual uma lista filtrada por nome pode ser paginada — o resto seria filtrar em Python
+depois da consulta, e aí não há fronteira de página. Renomeou no monólito, o evento chega
+(`/internal/identity-events`), e a busca passa a achar pelo nome novo e a não achar pelo antigo.
+
+Acentos e caixa são ignorados nos **dois lados**: `joao` acha João e `João` acha Joao. A normalização é
+`immutable_unaccent` (migration `f2b7d419ac53`) aplicada à coluna e ao padrão — só à coluna
+consertaria metade. O `unaccent` do Postgres é apenas STABLE e por isso não pode entrar num índice; o
+wrapper nomeia o dicionário explicitamente, que é o que o torna honestamente imutável. O índice é GIN
+com `gin_trgm_ops`: o filtro é `ILIKE '%...%'` e um curinga à esquerda é exatamente o que um btree não
+responde.
+
+`%` e `_` digitados na busca são **texto**, não padrão. Sem escapar, um `_` perdido casa com qualquer
+caractere e um `%` casa com a lista inteira — e uma busca que devolve demais parece o filtro quebrado,
+não a entrada sendo lida como padrão.
+
+### O limite do filtro
+
+A busca casa **substring**, não palavra: `ana` acha "Ana", "Mariana" e "Joana". É o que quem procura
+espera ao digitar parte de um sobrenome, e é também o motivo de o índice ser trigrama. O que ela não
+faz é ordenar por relevância — os resultados saem na ordem da lista, por última atividade, o que é o
+que um chat quer.
+
 ## Staff-only Message
 
 Uma **Staff-only Message** é uma mensagem dentro de um Client Chat visível só para os Participants da Company. O cliente final não a recebe e não descobre que ela existe.
@@ -504,7 +582,7 @@ O predicado não diz nada sobre pertencimento: se o leitor tem lugar no Chat é 
 **Nenhum caminho de leitura reescreve a regra.** `readable_visibilities` monta o `WHERE` perguntando ao próprio `may_read` sobre cada visibilidade, em vez de restatá-la em SQL — uma segunda grafia seria uma segunda coisa para manter em dia, e as duas divergiriam na primeira vez que só uma fosse atualizada. Três leituras passam por ela:
 
 - `GET /chats/{id}/messages` filtra o histórico. Como a ordenação é por `created_at` e não por posição, a mensagem omitida **não deixa buraco**: o cliente final vê uma lista contígua, sem nada indicando que faltou algo.
-- `GET /chats` tira `last_message_at` só do que o leitor pode ler. Esse campo é o timestamp exibido ao lado do Chat **e** a chave da ordenação — sem filtro ele avançaria e flutuaria o Chat para o topo toda vez que o staff dissesse algo que o cliente final não pode ler, anunciando a Staff-only Message sem citá-la.
+- `GET /chats` tira `last_message` **e** `last_message_at` só do que o leitor pode ler, e os dois saem da mesma linha. O timestamp é exibido ao lado do Chat **e** é a chave da ordenação — sem filtro ele avançaria e flutuaria o Chat para o topo toda vez que o staff dissesse algo que o cliente final não pode ler, anunciando a Staff-only Message sem citá-la. A prévia é o outro lado do mesmo vazamento: filtrada **depois** de escolhida a linha mais recente, ela voltaria vazia para o cliente final enquanto o staff vê texto, o que anuncia a mensagem pelo buraco. Por isso o filtro está dentro do `LATERAL`, e a prévia cai para a última mensagem que aquele leitor pode ler.
 - O handshake do WebSocket usa o predicado para decidir em quais endereços o socket entra (ver "Tempo real"). O socket do cliente final nunca entra no endereço staff, então a regra vale no transporte sem nenhum filtro na entrega.
 - `POST /chats/{id}/messages` valida a escrita com o **mesmo** predicado: quem escreve só endereça uma mensagem a um conjunto do qual faz parte. Isso torna `422` tanto uma staff-only num Staff Chat (não há ninguém lá para excluir, a restrição não significa nada) quanto uma escrita por cliente final (ele escreveria algo que não poderia depois ler) — sem uma segunda regra para alguém manter em dia. Recusar é melhor que guardar como mensagem comum: um rebaixamento silencioso diz ao remetente que a mensagem foi restrita quando não foi.
 
@@ -556,9 +634,13 @@ Não bloqueia o funcionamento hoje, mas seria o primeiro ponto de atenção ante
   continua sendo só condição para passar.
 - **O drain não existe fora do `docker-compose.yml`.** `infra/` define uma task definition e um service, ambos `backend`. Um deploy sem o processo de drain armazena tudo e entrega nada em tempo real, em silêncio. Ticket 20.
 - ~~**Índice de `messages` favorece a query errada.**~~ *(Resolvido no ticket 09: `ix_messages_chat_id_created_at_id`, migration `d8f1a5c37b92`, é `(chat_id, created_at, id)` — o par que o cursor percorre. A constraint de unicidade do ticket 08 continua servindo ao filtro de retry; o que faltava era a ordenação, que o Postgres fazia à parte a cada página.)*
-- **Índice de `participants` favorece a query errada.** O `UniqueConstraint(chat_id, user_id)` serve bem a checagem de membership, mas `list_chats` — chamada a cada carregamento da sidebar — filtra só por `user_id`; faltaria um índice dedicado liderado por esse campo.
+- **Índice de `participants` favorece a query errada.** O `UniqueConstraint(chat_id, user_id)` serve bem a checagem de membership, mas `list_chats` — chamada a cada carregamento da sidebar — filtra só por `user_id`; faltaria um índice dedicado liderado por esse campo. O `EXISTS` da busca por nome percorre `participants` por `chat_id`, que a constraint já atende.
 - **Sem rate limiting** em `/webhook/messages`.
-- **`GET /chats` ainda devolve o conjunto inteiro.** `GET /chats/{id}/messages` pagina por cursor desde o ticket 09; a lista de Chats não, e é o ticket 10 que a pagina pelo mesmo contrato de cursor, junto com o filtro por nome de participante.
+- ~~**`GET /chats` ainda devolve o conjunto inteiro.**~~ *(Resolvido no ticket 10: a lista pagina pelo mesmo contrato de cursor de `GET /chats/{id}/messages`, sobre `(última atividade, id do Chat)`, e aceita `search` por nome de participante ou do próprio Chat.)*
+- **A busca só enxerga quem ainda está no Chat.** O `EXISTS` de `_matching_the_search` carrega `STILL_IN_THE_CHAT`, então um 1:1 deixa de ser achável pelo nome da outra pessoa assim que ela sai — e um 1:1 não tem nome próprio para servir de alternativa. É coerente com todo o resto (`participant_user_ids` só mostra quem está), mas um Chat na sua lista que nenhum nome acha é um Chat que só o scroll alcança. Ver `docs/decisions.md`.
+- **A metade do `OR` que casa o nome do próprio Chat não tem índice.** O nome do participante passa pelo GIN trigrama da migration `f2b7d419ac53`; `chats.name` é varrido. O alcance é a lista de quem pergunta, não os profiles da Company inteira, e por isso ficou.
+- **A busca não ordena por relevância.** `search` casa substring e devolve na ordem da lista, por última atividade. Quem digita `ana` procurando "Ana Souza" recebe antes um Chat com "Mariana" se alguém falou nele mais recentemente. Numa lista de centenas isso incomoda; o que resolve é pontuar a similaridade (`similarity()` do `pg_trgm`, que já está instalado) como critério de ordenação secundário — o que muda a chave de ordenação e portanto o cursor, então não cabia no ticket 10.
+- **`GET /chats` não tem índice para a ordem que ela percorre.** O `LATERAL` da prévia usa `ix_messages_chat_id_created_at_id`, mas a ordenação da lista é por uma expressão (`COALESCE` sobre a saída do lateral) e não por coluna — o Postgres ordena o resultado do join. É barato enquanto uma pessoa está em dezenas de Chats, e deixa de ser quando estiver em milhares.
 - **Zero logging estruturado** em todo o `app/` — combinado com o subscriber Redis sem tratamento de falha (acima), é o ponto mais arriscado de operar isso em produção sem visibilidade.
 
 ## Testes manuais: Insomnia e os dois scripts

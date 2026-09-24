@@ -85,3 +85,34 @@ class Message(Base, CompanyScoped):
     """
     deleted_by_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     deletion_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+OLDEST_FIRST = (Message.created_at, Message.id)
+"""The total order a Chat's messages are read in, spelled once.
+
+`created_at` alone is a partial order: two messages the clock cannot separate
+share an instant, and their relative order is then whatever the plan happens to
+produce — which can differ between two reads of the same rows.
+
+That is not merely untidy, because the cursor pages over exactly this order. A
+pair that sorts one way on one page and the other way on the next is a message
+skipped or a message served twice. The identifier is the tiebreaker: arbitrary,
+since a v4 uuid says nothing about time, but total and stable, which is the
+whole of what a cursor needs. Every read of a Chat's history orders by this
+tuple, so the ordering and the cursor cannot come to disagree.
+
+It lives beside the table rather than in `services/message.py`, where ticket 09
+first wrote it, because the chat list reaches for it too: the last message of
+each Chat is the newest row in this same order, and `services/chat.py` is
+underneath `services/message.py` in the import graph. Two orderings, one per
+service, is the drift the tiebreaker exists to prevent.
+"""
+
+NEWEST_FIRST = tuple(column.desc() for column in OLDEST_FIRST)
+"""The same order, walked from the end — which is where a chat is read from.
+
+A thread opens on what was said last, so the page has to be found by walking
+backwards, and so does the one row the chat list previews. Derived from
+`OLDEST_FIRST` rather than written out, because the two directions disagreeing
+on the tiebreaker is exactly the bug the tiebreaker was added to prevent.
+"""

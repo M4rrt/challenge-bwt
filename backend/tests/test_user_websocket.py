@@ -81,6 +81,61 @@ async def test_participant_is_notified_over_user_channel_when_message_arrives(
 
     assert received["id"] == chat_id
     assert received["last_message_at"] == message_created_at
+    assert received["last_message"]["body"] == "oi"
+
+
+async def test_the_pushed_summary_never_previews_a_staff_only_message(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """The live chat list carries a message body now, so the rule has to hold here too.
+
+    Ticket 10 gave the summary a `last_message`, and that is a second way a
+    Staff-only Message could reach an end client — the first being `GET /chats`.
+    The spec's line is "never over the API, never in a count, never as a gap in
+    pagination", and a push is none of those three only in the sense that
+    nobody had written it down yet.
+
+    What the end client must receive is not silence but the last message they
+    *may* read. A summary whose preview went empty while the timestamp stayed
+    put would announce the Staff-only Message by the hole it left, which is the
+    same failure the list endpoint's own test guards against.
+    """
+    _, staff_token = caller_token(user_kind="staff")
+    end_client_id, end_client_token = caller_token(user_kind="client")
+    chat_id = (
+        await open_chat(
+            client,
+            bearer(staff_token),
+            end_client_id,
+            chat_type="client",
+            user_kind="client",
+        )
+    ).json()["id"]
+    await say(client, chat_id, bearer(staff_token), "bom dia")
+    # Composition and the visible message both enqueued a summary; the drain is
+    # FIFO, so they are cleared here to leave the Staff-only send as the next
+    # thing either socket will be told about.
+    await drain_once(db_session)
+
+    async with AsyncClient(
+        transport=ASGIWebSocketTransport(app=app), base_url="http://test"
+    ) as ws_client:
+        async with aconnect_ws(
+            f"/websocket/users/me?token={end_client_token}", client=ws_client
+        ) as client_socket:
+            async with aconnect_ws(
+                f"/websocket/users/me?token={staff_token}", client=ws_client
+            ) as staff_socket:
+                await say(
+                    client, chat_id, bearer(staff_token), "combinado?", visibility="staff_only"
+                )
+                await drain_once(db_session)
+
+                by_the_client = await client_socket.receive_json(timeout=5)
+                by_staff = await staff_socket.receive_json(timeout=5)
+
+    assert by_staff["last_message"]["body"] == "combinado?"
+    assert by_the_client["last_message"]["body"] == "bom dia"
 
 
 async def test_connected_user_receives_message_published_to_their_channel(

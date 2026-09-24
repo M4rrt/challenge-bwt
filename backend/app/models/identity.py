@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, UniqueConstraint, Uuid, func
+from sqlalchemy import DateTime, Index, String, UniqueConstraint, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.company_scope import CompanyScoped
@@ -69,3 +69,32 @@ class UserProfile(Base, CompanyScoped):
     one health signal this projection has: there is no cache hit rate, because
     there is no miss path.
     """
+
+
+# What the chat list's name filter walks, declared here as well as in the
+# migration `f2b7d419ac53` for the reason the messages index gives: a model that
+# does not carry its own indexes makes every future autogenerate propose
+# dropping them.
+#
+# It sits outside `__table_args__` because that tuple is built while the class
+# body is still running, before `display_name` exists to be wrapped. Naming the
+# column here associates the index with the table all the same, which is what
+# puts it in `Base.metadata`.
+#
+# The expression has to be spelled exactly as `_unaccented` spells it in
+# `services/chat.py` — an index on a different expression is an index the
+# planner silently declines to use.
+#
+# The label exists only to give `postgresql_ops` something to key on. An
+# unlabelled expression has no key, so the operator class is silently dropped
+# and the model ends up declaring a GIN index with no opclass — not the index
+# the migration builds, and one Postgres would refuse outright. Written inline
+# in the expression instead, Alembic cannot parse the element and skips the
+# comparison with a warning, passing `alembic check` by declining to look. The
+# label itself is not emitted in the DDL.
+Index(
+    "ix_user_profiles_display_name_unaccented",
+    func.immutable_unaccent(UserProfile.display_name).label("unaccented_display_name"),
+    postgresql_using="gin",
+    postgresql_ops={"unaccented_display_name": "gin_trgm_ops"},
+)

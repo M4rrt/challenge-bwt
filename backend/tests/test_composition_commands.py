@@ -107,7 +107,7 @@ async def test_the_command_creates_a_chat_of_exactly_the_participants_it_carries
 
     assert created.status_code == 201
     assert set(created.json()["participant_user_ids"]) == {actor_id, other_id}
-    assert [chat["id"] for chat in listed_by_the_other.json()] == [created.json()["id"]]
+    assert [chat["id"] for chat in listed_by_the_other.json()["chats"]] == [created.json()["id"]]
 
 
 async def test_a_command_naming_a_participant_from_another_company_is_refused(
@@ -221,7 +221,7 @@ async def test_adding_a_participant_puts_them_in_the_chat(client: AsyncClient):
 
     assert added.status_code == 200
     assert set(added.json()["participant_user_ids"]) == {actor_id, other_id, third_id}
-    assert [chat["id"] for chat in listed_by_the_third.json()] == [chat_id]
+    assert [chat["id"] for chat in listed_by_the_third.json()["chats"]] == [chat_id]
 
 
 async def test_adding_an_end_client_to_a_staff_chat_is_refused(client: AsyncClient):
@@ -341,7 +341,7 @@ async def test_removing_a_participant_takes_them_out_of_the_chat(client: AsyncCl
 
     assert removed.status_code == 200
     assert removed.json()["participant_user_ids"] == [actor_id]
-    assert listed_by_the_removed.json() == []
+    assert listed_by_the_removed.json()["chats"] == []
     assert read_after_removal.status_code == 404
     assert [message["body"] for message in still_read_by_the_rest.json()["messages"]] == [
         "até mais"

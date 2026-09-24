@@ -1,28 +1,59 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.chat_token import Caller
 from app.core.company_scope import CompanyScope
+from app.core.cursor import InvalidCursorError
 from app.core.security import get_company_scope, get_current_caller
 from app.db import get_db
-from app.schemas.chat import ChatRead
+from app.schemas.chat import ChatPage
 from app.schemas.read_state import MarkRead, ReadState
-from app.services.chat import ChatNotFoundError, list_chats
+from app.services.chat import (
+    DEFAULT_CHAT_PAGE_LIMIT,
+    MAX_CHAT_PAGE_LIMIT,
+    ChatNotFoundError,
+    list_chats,
+)
 from app.services.message import MessageNotFoundError
 from app.services.read_state import mark_read
 
 router = APIRouter(prefix="/chats", tags=["chats"])
 
 
-@router.get("", response_model=list[ChatRead])
+@router.get("", response_model=ChatPage)
 async def list_all(
+    search: str | None = Query(
+        default=None,
+        max_length=100,
+        description="part of a participant's name, or of the chat's own name",
+    ),
+    before: str | None = Query(
+        default=None, description="a next_cursor from an earlier page"
+    ),
+    limit: int = Query(default=DEFAULT_CHAT_PAGE_LIMIT, ge=1, le=MAX_CHAT_PAGE_LIMIT),
     caller: Caller = Depends(get_current_caller),
     scope: CompanyScope = Depends(get_company_scope),
     db: AsyncSession = Depends(get_db),
-) -> list[ChatRead]:
-    return await list_chats(db, scope, caller)
+) -> ChatPage:
+    """The caller's Chats by last activity, a page at a time.
+
+    A cursor this service did not issue is refused rather than ignored, which
+    is the same choice `GET /chats/{id}/messages` makes: ignoring it would
+    answer a corrupted scroll position with the top of the list and say nothing
+    about it, and a client cannot tell that from having started over.
+
+    `search` is bounded because it becomes a `LIKE` pattern. Nobody types a
+    hundred characters to find a colleague, and an unbounded one is a pattern
+    the database is asked to walk every profile with.
+    """
+    try:
+        return await list_chats(
+            db, scope, caller, search=search, before=before, limit=limit
+        )
+    except InvalidCursorError as broken:
+        raise HTTPException(status_code=422, detail=broken.detail)
 
 
 @router.post("/{chat_id}/read", response_model=ReadState)

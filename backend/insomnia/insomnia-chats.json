@@ -34,7 +34,8 @@
         "token_b": "",
         "token_c": "",
         "token_d": "",
-        "token_e": ""
+        "token_e": "",
+        "chat_cursor": ""
       },
       "isPrivate": false,
       "metaSortKey": 0
@@ -428,7 +429,7 @@
       "name": "Listar como A",
       "method": "GET",
       "url": "{{ _.base_url }}/chats",
-      "description": "Cada item traz last_message_at, unread_count, last_read_at e last_read_message_id — os quatro são relativos a QUEM pergunta. Compare com a mesma lista vista por B.",
+      "description": "Desde o ticket 10 a resposta é `{\"chats\": [...], \"next_cursor\": ...}`, não mais um array. Cada item traz last_message (a prévia inteira, não só o texto), last_message_at, unread_count, last_read_at e last_read_message_id — todos relativos a QUEM pergunta. Compare com a mesma lista vista por B.",
       "metaSortKey": 0,
       "headers": [
         {
@@ -460,7 +461,7 @@
       "name": "Listar como E (cliente final)",
       "method": "GET",
       "url": "{{ _.base_url }}/chats",
-      "description": "Só o Client Chat. E o unread_count dele nunca conta uma Staff-only Message — nem o last_message_at se mexe por causa de uma.",
+      "description": "Só o Client Chat. O unread_count de E nunca conta uma Staff-only Message, o last_message_at não se mexe por causa de uma, e last_message cai para a última mensagem que E pode ler — nunca fica vazia por causa de uma Staff-only mais recente.",
       "metaSortKey": 2,
       "headers": [
         {
@@ -476,7 +477,7 @@
       "name": "Listar como D (isolamento)",
       "method": "GET",
       "url": "{{ _.base_url }}/chats",
-      "description": "D nunca entrou em Chat nenhum. Espere `[]`.",
+      "description": "D nunca entrou em Chat nenhum. Espere `{\"chats\": [], \"next_cursor\": null}`.",
       "metaSortKey": 3,
       "headers": [
         {
@@ -494,6 +495,57 @@
       "url": "{{ _.base_url }}/chats",
       "description": "Espere 401.",
       "metaSortKey": 4
+    },
+    {
+      "_id": "req_list_a_search",
+      "_type": "request",
+      "parentId": "fld_list",
+      "name": "Buscar por nome de participante",
+      "method": "GET",
+      "url": "{{ _.base_url }}/chats",
+      "parameters": [
+        {
+          "name": "search",
+          "value": "bruno",
+          "disabled": false
+        }
+      ],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token_a }}"
+        }
+      ],
+      "description": "O nome sai da projeção de identidade (`user_profiles`), nunca de uma chamada ao monólito (ADR-0010) — é por isso que a lista filtrada pagina igual à não filtrada. Casa com o nome de qualquer outro participante OU com o nome do próprio Chat, ignora acentos e maiúsculas (`joao` acha João), e ignora o próprio nome de quem pergunta: buscar o próprio nome não devolve a lista inteira.",
+      "metaSortKey": 5
+    },
+    {
+      "_id": "req_list_a_page",
+      "_type": "request",
+      "parentId": "fld_list",
+      "name": "Próxima página da lista",
+      "method": "GET",
+      "url": "{{ _.base_url }}/chats",
+      "parameters": [
+        {
+          "name": "limit",
+          "value": "2",
+          "disabled": false
+        },
+        {
+          "name": "before",
+          "value": "{{ _.chat_cursor }}",
+          "disabled": false
+        }
+      ],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token_a }}"
+        }
+      ],
+      "description": "Mesmo contrato de cursor de `GET /chats/{id}/messages`: `before` é o `next_cursor` da página anterior, opaco, e `next_cursor: null` é a única coisa que diz \"acabou\". O cursor percorre (última atividade, id do Chat) — um Chat sem mensagem nenhuma ordena na época Unix, atrás de tudo, e continua alcançável pelo cursor. Um cursor que este serviço não emitiu é recusado com 422, não ignorado.",
+      "metaSortKey": 6
     }
   ]
 }

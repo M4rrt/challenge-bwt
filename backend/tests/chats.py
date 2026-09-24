@@ -120,6 +120,75 @@ async def open_chat_of(
     )
 
 
+async def open_chat_with(
+    client: AsyncClient,
+    headers: dict[str, str],
+    user_id: str,
+    *,
+    called: str,
+    user_kind: str = "staff",
+    chat_type: str = "staff",
+) -> Response:
+    """A 1:1 with one person the command names *and* describes.
+
+    `open_chat` above lets every Participant take the same default name, which
+    is fine while nothing reads one. Ticket 10 filters the list by exactly that
+    column, so the tests that do need each person to be somebody in particular
+    — otherwise a search either matches everybody or matches by accident.
+    """
+    actor = acting_user(headers)
+    return await client.post(
+        "/internal/chats",
+        json={
+            "type": chat_type,
+            "participants": [
+                identity(
+                    str(actor.id),
+                    actor.user_kind,
+                    company_id=str(actor.company_id),
+                    display_name=actor.display_name or "Ana Souza",
+                ),
+                identity(
+                    user_id,
+                    user_kind,
+                    company_id=str(actor.company_id),
+                    display_name=called,
+                ),
+            ],
+            "name": None,
+        },
+        headers=acting_for(str(actor.id), str(actor.company_id)),
+    )
+
+
 async def open_chat_id(client: AsyncClient, headers: dict[str, str], *user_ids: str) -> str:
     response = await open_chat(client, headers, *user_ids)
     return response.json()["id"]
+
+
+async def listed(
+    client: AsyncClient, headers: dict[str, str], **params: str | int | None
+) -> Response:
+    """The caller's chat list, with whatever this test is filtering or paging by.
+
+    Since ticket 10 the list answers with a page rather than a bare array, and
+    takes `search`, `before` and `limit`. Spelled here so that the next
+    parameter is one edit rather than one per call site — which is the argument
+    `say` above already makes about the send contract.
+
+    A None is left out rather than sent. httpx would send it as an empty
+    string, and an empty cursor is a string this service did not issue — so a
+    test walking a list to its end would be refused on the request that starts
+    the walk, for a reason that has nothing to do with what it is testing.
+    """
+    given = {name: value for name, value in params.items() if value is not None}
+    return await client.get("/chats", params=given, headers=headers)
+
+
+async def chat_ids(
+    client: AsyncClient, headers: dict[str, str], **params: str | int | None
+) -> list[str]:
+    """Which Chats this caller sees, in order — the list's usual assertion."""
+    response = await listed(client, headers, **params)
+    assert response.status_code == 200, response.text
+    return [chat["id"] for chat in response.json()["chats"]]
