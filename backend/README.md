@@ -603,6 +603,27 @@ chega no socket até o drain rodar também.
 ```
 uv run alembic revision --autogenerate -m "message"
 uv run alembic upgrade head
+uv run alembic check
 ```
+
+`alembic check` faz a mesma comparação que o `--autogenerate` — os modelos contra o schema vivo — mas
+em vez de escrever migration ele só pergunta se haveria alguma. Sai 0 quando não há, 1 e a lista quando
+há. É guarda de CI: garante que migrations e modelos ainda descrevem o mesmo banco.
+
+Duas coisas mantêm isso verdadeiro, e as duas já falharam aqui:
+
+- **Todo índice é declarado no modelo também**, não só na migration. Um índice que os modelos não
+  mencionam é lido como um que alguém dropou, e o próximo `--autogenerate` propõe apagá-lo — foi o que
+  aconteceu com `ix_outbox_pending`, o índice parcial em que o drain varre.
+- **`include_object` em `alembic/env.py` filtra check constraints.** `stored_by_value` constrói as
+  colunas com `Enum(create_constraint=True)`, então `chat_type`, `message_visibility` e
+  `participant_role` são *type-bound* — pertencem ao tipo, não à tabela — e o Alembic tira constraints
+  type-bound do lado dos metadados de propósito. As refletidas ficam sem par e todo run reportava as
+  três como removidas, fazendo o `--autogenerate` emitir `op.drop_constraint` para cada uma. É
+  supressão, não correção: se um dia existir uma check constraint escrita à mão, é a hora de revisitar.
+
+**O downgrade até `base` não roda num banco com dados.** Reverter `a3f7c2e51b08` (a renomeação de
+`conversations` para `chats`) repovoa `conversation_participants`, cuja FK aponta para a tabela `users`
+que uma migration posterior removeu. Ir para frente funciona; voltar até o começo, não.
 
 `alembic/env.py` lê a URL do banco a partir de `app.core.config.settings` (ou seja, do `.env`), não do `alembic.ini`.
