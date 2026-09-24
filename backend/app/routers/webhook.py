@@ -20,7 +20,6 @@ async def receive(
 
     data = WebhookMessageCreate.model_validate_json(body)
     try:
-        message = await send_external_message(db, data)
+        return await send_external_message(db, data)
     except ChatNotFoundError:
         raise HTTPException(status_code=404, detail="chat not found")
-    return MessageRead.of(message)

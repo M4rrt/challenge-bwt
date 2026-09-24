@@ -37,6 +37,27 @@ async def get_company_scope(caller: Caller = Depends(get_current_caller)) -> Com
     return CompanyScope.of(caller)
 
 
+async def require_service_credential(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> None:
+    """That the monolith sent this, and nothing about whom it sent it for.
+
+    The credential is compared whole, in constant time, and it is not a chat
+    token: a chat token presented here fails the comparison, and this
+    credential presented to a public route is not a JWT and never becomes a
+    Caller. The two vocabularies of "who is calling" stay separate on purpose.
+
+    This is the whole authority an identity event needs. A composition command
+    needs more — `get_acting_user` below — because there is no Chat without an
+    author; a user's name changing has no author to name, and demanding one
+    would be asking the monolith to invent it.
+    """
+    if credentials is None or not hmac.compare_digest(
+        credentials.credentials, settings.internal_service_token
+    ):
+        raise HTTPException(status_code=401, detail="invalid or missing service credential")
+
+
 async def get_acting_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     acting_user_id: str | None = Header(default=None, alias="X-Acting-User"),
@@ -44,16 +65,12 @@ async def get_acting_user(
 ) -> ActingUser:
     """The authority behind a composition command: the monolith, acting for someone.
 
-    Both halves are required and neither defaults. The credential is compared
-    whole, in constant time, and it is not a chat token: a chat token presented
-    here fails the comparison, and this credential presented to a public route
-    is not a JWT and never becomes a Caller. The two vocabularies of "who is
-    calling" stay separate on purpose.
+    Both halves are required and neither defaults. The credential is the same
+    one `require_service_credential` checks; what this adds is the acting-user
+    header, which is what stops the service credential becoming an omnipotent
+    one (ADR-0010).
     """
-    if credentials is None or not hmac.compare_digest(
-        credentials.credentials, settings.internal_service_token
-    ):
-        raise HTTPException(status_code=401, detail="invalid or missing service credential")
+    await require_service_credential(credentials)
 
     if acting_user_id is None or acting_company_id is None:
         raise HTTPException(status_code=401, detail="no acting user named")

@@ -19,9 +19,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.acting_user import ActingUser
 from app.core.company_scope import CompanyScope
-from app.core.security import get_acting_user, get_command_scope
+from app.core.security import get_acting_user, get_command_scope, require_service_credential
 from app.db import get_db
 from app.schemas.chat import AddParticipantCommand, ChatCommand, ChatComposed
+from app.schemas.identity import IdentityBulkLoad, IdentityEvent
 from app.services.chat import (
     ChatNotFoundError,
     ChatShapeError,
@@ -30,6 +31,7 @@ from app.services.chat import (
     create_chat,
     remove_participant,
 )
+from app.services.identity import apply_identities
 
 router = APIRouter(prefix="/internal", tags=["internal"])
 
@@ -76,3 +78,47 @@ async def remove(
     except (ChatNotFoundError, ParticipantNotFoundError):
         raise HTTPException(status_code=404, detail="participant not found")
     return ChatComposed.of(chat)
+
+
+@router.post("/identity-events", status_code=204)
+async def receive_identity_event(
+    event: IdentityEvent,
+    _: None = Depends(require_service_credential),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """The identity stream, arriving over the same ingress as commands.
+
+    A broker was the alternative and is deferred: it would add a second test
+    seam for no behaviour this spec needs. This route is a thin adapter over
+    `apply_event`, so putting a broker in front of it later touches nothing in
+    the domain.
+
+    No acting-user header, unlike the commands above. A composition names an
+    author because there is no Chat without one; a user's name changing in the
+    monolith has no author to name, and demanding one would be asking the
+    monolith to invent it. The Company comes from the event itself, which is
+    the same shape the webhook already has — the payload names the boundary it
+    writes into, and every read of it goes back through `CompanyScope`.
+
+    204, whether the event was applied, lost to a newer one, or had already
+    been seen. At-least-once means the sender retries on a failure and must not
+    be told anything it would act on differently.
+    """
+    await apply_identities(db, [event])
+
+
+@router.post("/identities", status_code=204)
+async def load_identities(
+    load: IdentityBulkLoad,
+    _: None = Depends(require_service_credential),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Initial population and rebuild, over the same write as the event stream.
+
+    A new environment starts with an empty projection and a corrupted one has
+    to be refillable, and neither is a reason to replay the whole identity
+    history. What arrives here is dated like an event, so a rebuild racing the
+    live stream loses to anything the stream has already delivered that is
+    newer — the two cannot fight.
+    """
+    await apply_identities(db, load.identities)

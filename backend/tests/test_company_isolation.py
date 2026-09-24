@@ -28,6 +28,7 @@ from app.models.chat import Participant
 from app.services.outbox import drain_once
 from tests.chats import open_chat
 from tests.chat_tokens import OMITTED, bearer, caller_token
+from tests.identities import identity_event, now
 
 
 def _signed(payload: dict[str, str]) -> tuple[bytes, dict[str, str]]:
@@ -198,14 +199,22 @@ def test_no_read_path_builds_its_own_query_over_a_scoped_entity():
     a scoped entity in the whole of `app/` — so a new read path cannot skip the
     Company filter without this test naming the file and line where it did.
 
-    Two exemptions, listed here rather than left to convention so that adding a
-    third is an edit somebody has to justify — and named **per entity**, not per
-    file. `company_scope.py` is the constructor itself, so nothing in it is
+    Three exemptions, listed here rather than left to convention so that adding
+    a fourth is an edit somebody has to justify — and named **per entity**, not
+    per file. `company_scope.py` is the constructor itself, so nothing in it is
     checked. `services/outbox.py` may read `OutboxEvent` and only that: the
     drain has no caller, no token and therefore no Company, and it reads every
     Company's pending rows on purpose. That is safe for the one reason the
     outbox rests on — the Company is settled into the address when the row is
     written, so the drain routes without deciding anything.
+
+    `services/projection_health.py` may read `UserProfile` and only that, for
+    the same reason: projection lag is answered for an operator watching the
+    service, who holds no token and belongs to no Company, and a lag computed
+    per Company would hide the stalled one behind the healthy ones. That module
+    holds exactly one function so this exemption stays that narrow —
+    `profiles_by_user_id`, which *is* read on behalf of a user, lives in
+    `services/identity.py` and is still checked here.
 
     Per entity matters. Exempting the whole file would let a `select(Chat)` grow
     inside the drain unwatched, which is the ordinary kind of read this guard
@@ -218,6 +227,7 @@ def test_no_read_path_builds_its_own_query_over_a_scoped_entity():
     exempt: dict[Path, set[str] | None] = {
         application / "core" / "company_scope.py": None,
         application / "services" / "outbox.py": {"OutboxEvent"},
+        application / "services" / "projection_health.py": {"UserProfile"},
     }
     sources = sorted(application.rglob("*.py"))
     offenders: list[str] = []
@@ -394,3 +404,38 @@ async def test_creating_a_chat_files_every_participant_under_one_company(
     companies = {participant.company_id for participant in participants}
 
     assert companies == {company_x}
+
+
+async def test_a_display_name_from_another_company_is_never_resolved(client: AsyncClient):
+    """The identity projection is a read path too, and its key repeats across Companies.
+
+    A profile is keyed by (Company, user) precisely because the same user id
+    can exist in two of them — the same reason every fan-out address carries
+    the Company. Resolved by user id alone, a message here would be signed with
+    the name another Company gave that person: not a row leaking, but something
+    worse to find, because the message, the Chat and the Participants are all
+    correctly isolated and only the name is wrong.
+    """
+    company_x = uuid.uuid4()
+    company_y = uuid.uuid4()
+    user_a_id = uuid.uuid4()
+    _, token_a_in_x = caller_token(
+        user_id=user_a_id, company_id=company_x, display_name="Carla Dias"
+    )
+    user_b_id, token_b_in_x = caller_token(company_id=company_x)
+
+    chat_id = (await open_chat(client, bearer(token_a_in_x), user_b_id)).json()["id"]
+    await client.post(
+        f"/chats/{chat_id}/messages", json={"body": "oi"}, headers=bearer(token_a_in_x)
+    )
+    await identity_event(
+        client,
+        str(user_a_id),
+        display_name="Outra Empresa",
+        company_id=str(company_y),
+        source_updated_at=now(),
+    )
+
+    read_by_b = await client.get(f"/chats/{chat_id}/messages", headers=bearer(token_b_in_x))
+
+    assert [message["sender_display_name"] for message in read_by_b.json()] == ["Carla Dias"]
