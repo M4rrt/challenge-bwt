@@ -1,10 +1,11 @@
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from httpx import AsyncClient
 from jose import jwt
 
+from app.core.chat_token import verify_chat_token
 from app.core.config import settings
 from tests.chat_tokens import mint_chat_token
 
@@ -86,3 +87,30 @@ async def test_the_service_has_no_login_of_its_own(client: AsyncClient, method: 
     response = await client.request(method, path, json={})
 
     assert response.status_code == 404
+
+
+def test_a_verified_token_carries_the_moment_it_expires():
+    """The socket needs the deadline, and the only place it can come from is the token.
+
+    ADR-0011 makes the fifteen-minute lifetime the revocation mechanism, so
+    "when does this expire" stops being the JWT library's private business and
+    becomes something the service schedules against.
+    """
+    expires_in = timedelta(minutes=15)
+    before = datetime.now(timezone.utc)
+
+    caller = verify_chat_token(mint_chat_token(expires_in=expires_in))
+
+    assert caller is not None
+    assert before + expires_in - timedelta(seconds=5) <= caller.expires_at
+    assert caller.expires_at <= datetime.now(timezone.utc) + expires_in
+
+
+def test_a_token_that_never_expires_is_not_a_chat_token():
+    """No expiry means no revocation, which is the whole of ADR-0011.
+
+    The library only checks an `exp` it finds, so a token issued without one is
+    accepted forever by default. Here that is a token the service refuses
+    rather than a token the service cannot take away.
+    """
+    assert verify_chat_token(mint_chat_token(expires_in=None)) is None

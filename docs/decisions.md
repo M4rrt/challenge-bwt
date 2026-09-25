@@ -58,6 +58,32 @@ through [0011](adr/0011-revocation-at-the-next-token.md)); what is here is light
   which is the exact property [ADR-0009](adr/0009-chat-owns-token-in-rs256.md)
   was accepted to remove. The ADR is accepted, not shipped. Ticket 19 does the
   swap and must land before production traffic.
+- **A chat token with no `exp` is refused, not accepted forever.** The JWT library
+  only enforces an expiry it finds, so a token issued without one would verify
+  indefinitely. [ADR-0011](adr/0011-revocation-at-the-next-token.md) makes the
+  lifetime *the* revocation mechanism, which means a token with no lifetime is a
+  token the service cannot take away — so `verify_chat_token` requires the claim
+  and `Caller` carries the moment rather than the library discarding it. Ticket 11.
+- **Eviction travels a control channel, not the delivery channels.** The socket to
+  close is almost never on the instance that handled the removal, so the
+  instruction goes over the same Redis as a delivery — but on `control:{company}`
+  rather than inside a payload on an existing channel. A delivery names an
+  audience and the subscriber forwards it blind; an eviction names *sockets*, and
+  no channel name can express "this person, in this one Chat, and none of their
+  other connections". Deciding by channel prefix keeps the hot path free of a rule
+  to read, which is [ADR-0008](adr/0008-domain-rewritten-in-fastapi.md)'s defect.
+  Ticket 11.
+- **The revocation denylist is read on the WebSocket paths and not on the API
+  path.** Ticket 11 asked for the urgent revocation to close a user's connections,
+  and it does — handshake, renewal and the periodic revalidation all consult it.
+  The authenticated HTTP routes deliberately do not, so a banned user's existing
+  token can still read for up to one token lifetime. The missing piece is one line
+  in `get_current_caller`; what it costs is the reason it is absent — a Redis
+  round trip on every authenticated request, and a Redis outage turning into a 500
+  on every request instead of what the fan-out does today (rows stay pending and
+  drain when it returns). Coupling the API's availability to Redis is a bigger
+  decision than the ticket that surfaced it. Recorded in `backend/README.md` under
+  "Débito técnico conhecido".
 - **The chat's own authentication is removed.** `POST /auth/register`,
   `/auth/login`, `/auth/refresh`, the `User` model and password hashing all go.
   The monolith becomes the only place where a password exists.

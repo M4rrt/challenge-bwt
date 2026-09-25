@@ -16,6 +16,7 @@ and a mandatory `aud` check. The claims contract below does not change.
 
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from jose import JWTError, jwt
 
@@ -26,12 +27,22 @@ CHAT_CLAIM_NAMESPACE = "https://brwinetours.com/chat"
 
 @dataclass(frozen=True)
 class Caller:
+    """Who is calling, and until when.
+
+    `expires_at` is a claim like the others, not bookkeeping: ADR-0011 makes the
+    lifetime the revocation mechanism, so the moment it ends is the moment the
+    service stops believing any of the rest. A long-lived WebSocket has to
+    schedule against it — warn, then close — which a decode that merely *checked*
+    `exp` and threw it away could not support.
+    """
+
     id: uuid.UUID
     company_id: uuid.UUID
     user_kind: str
     scopes: tuple[str, ...]
     display_name: str | None
     avatar_url: str | None
+    expires_at: datetime
 
 
 def _caller_from(claims: dict[str, object]) -> Caller | None:
@@ -47,12 +58,20 @@ def _caller_from(claims: dict[str, object]) -> Caller | None:
             scopes=tuple(chat_claims["scopes"]),
             display_name=chat_claims.get("display_name"),
             avatar_url=chat_claims.get("avatar_url"),
+            expires_at=datetime.fromtimestamp(claims["exp"], timezone.utc),  # type: ignore[arg-type]
         )
     except (KeyError, TypeError, ValueError):
         return None
 
 
 def verify_chat_token(token: str) -> Caller | None:
+    """The claims, or nothing — and `exp` is one of the claims it requires.
+
+    The library only enforces an `exp` it finds, so a token issued without one
+    would be accepted forever. That is not a token this service can revoke, and
+    revocation-by-expiry is the whole of ADR-0011, so the missing claim is a
+    refusal rather than a token with no deadline to schedule against.
+    """
     try:
         claims = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
     except JWTError:

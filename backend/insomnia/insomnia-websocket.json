@@ -1,151 +1,231 @@
 {
-  "_type": "export",
-  "__export_format": 4,
-  "__export_date": "2026-09-24T00:00:00.000Z",
-  "__export_source": "manual:chat-service-ticket-09",
-  "resources": [
+ "_type": "export",
+ "__export_format": 4,
+ "__export_date": "2026-09-24T00:00:00.000Z",
+ "__export_source": "manual:chat-service-ticket-11",
+ "resources": [
+  {
+   "_id": "wrk_ws",
+   "_type": "workspace",
+   "name": "Chat Service — WebSocket, fan-out e ciclo de vida da conexão",
+   "description": "Os três endereços de fan-out (ticket 07), e o que mantém uma conexão viva ou a fecha (ticket 11): renovação em banda, revalidação periódica, expulsão e os três close codes.",
+   "scope": "collection"
+  },
+  {
+   "_id": "env_base",
+   "_type": "environment",
+   "parentId": "wrk_ws",
+   "name": "Base Environment",
+   "data": {
+    "base_url": "http://localhost:8000",
+    "ws_base_url": "ws://localhost:8000",
+    "service_token": "change-me",
+    "company_id": "11111111-1111-1111-1111-111111111111",
+    "chat_id": "",
+    "client_chat_id": "",
+    "message_id": "",
+    "cursor": "",
+    "user_a_id": "",
+    "user_b_id": "",
+    "user_c_id": "",
+    "user_d_id": "",
+    "user_e_id": "",
+    "token_a": "",
+    "token_b": "",
+    "token_c": "",
+    "token_d": "",
+    "token_e": ""
+   },
+   "isPrivate": false,
+   "metaSortKey": 0
+  },
+  {
+   "_id": "fld_ws_setup",
+   "_type": "request_group",
+   "parentId": "wrk_ws",
+   "name": "00 - Setup (leia primeiro)",
+   "description": "Rode a coleção \"Composição e lista de Chats\" primeiro, para ter tokens e `chat_id`.\n\nO token vai na QUERY STRING, não em header: um WebSocket de browser não deixa pôr Authorization no handshake. Ele é verificado ANTES do accept() — uma conexão sem autorização é recusada, não aceita e depois fechada.\n\nIMPORTANTE — o drain. Desde o ticket 07 o request não publica: ele grava uma linha no outbox e um processo separado publica. Com `docker compose up` o drain sobe junto. Se você estiver rodando o backend à mão (`uvicorn`), NADA chega no socket até você rodar o drain também — é a causa nº 1 de \"o WebSocket não recebe\".",
+   "metaSortKey": 0
+  },
+  {
+   "_id": "fld_ws_conn",
+   "_type": "request_group",
+   "parentId": "wrk_ws",
+   "name": "01 - Conexões",
+   "description": "1. Abra 'Conectar como B' e deixe aberto.\n2. Dispare 'Enviar como A' (pasta 03).\n3. A mensagem chega no painel de B.\n4. Separadamente, abra 'Conectar como D' e confirme que fecha na hora com 1008.\n5. Para a lista: abra 'Conectar como B (lista de Chats)' e componha um Chat novo pela outra coleção — o resumo chega com unread_count e last_read_at.\n\nCLOSE CODES (ticket 11) — são contrato, não detalhe:\n  1008 unauthenticated: a credencial nunca valeu aqui. Não tente de novo com ela.\n  4401 token expired: valeu e acabou. Renove e reconecte.\n  4403 access revoked: a credencial está boa, o Chat não é seu. Saia dele.\nFalha de rede não é nenhum dos três — continua erro de socket, continua em backoff.",
+   "metaSortKey": 1
+  },
+  {
+   "_id": "ws_chat_b",
+   "_type": "websocket_request",
+   "parentId": "fld_ws_conn",
+   "name": "Conectar como B (thread do Chat)",
+   "url": "{{ _.ws_base_url }}/websocket/chats/{{ _.chat_id }}?token={{ _.token_b }}",
+   "description": "Recebe o que for dito no Chat, incluindo mensagens de webhook e os marcadores de exclusão.",
+   "metaSortKey": 0
+  },
+  {
+   "_id": "ws_chat_e",
+   "_type": "websocket_request",
+   "parentId": "fld_ws_conn",
+   "name": "Conectar como E (cliente final, Client Chat)",
+   "url": "{{ _.ws_base_url }}/websocket/chats/{{ _.client_chat_id }}?token={{ _.token_e }}",
+   "description": "Deixe aberto e mande uma Staff-only Message como A. Ela NÃO chega aqui: o isolamento vem do endereço, não de um filtro na entrega.",
+   "metaSortKey": 1
+  },
+  {
+   "_id": "ws_chat_d",
+   "_type": "websocket_request",
+   "parentId": "fld_ws_conn",
+   "name": "Conectar como D (fora do Chat, espere 1008)",
+   "url": "{{ _.ws_base_url }}/websocket/chats/{{ _.chat_id }}?token={{ _.token_d }}",
+   "description": "D não é Participant. Fecha imediatamente com 1008 — e um Chat inexistente fecha igual, pela mesma razão do 404-não-403.",
+   "metaSortKey": 2
+  },
+  {
+   "_id": "ws_user_b",
+   "_type": "websocket_request",
+   "parentId": "fld_ws_conn",
+   "name": "Conectar como B (lista de Chats)",
+   "url": "{{ _.ws_base_url }}/websocket/users/me?token={{ _.token_b }}",
+   "description": "Canal por usuário. Recebe o resumo do Chat sempre que a composição muda ou alguém fala — já com unread_count e last_read_at de B. O canal é user:{company_id}:{user_id}: o mesmo id de usuário pode existir em duas Companies.",
+   "metaSortKey": 3
+  },
+  {
+   "_id": "fld_ws_trigger",
+   "_type": "request_group",
+   "parentId": "wrk_ws",
+   "name": "03 - Disparos (com o socket aberto)",
+   "description": "",
+   "metaSortKey": 2
+  },
+  {
+   "_id": "req_ws_send",
+   "_type": "request",
+   "parentId": "fld_ws_trigger",
+   "name": "Enviar como A",
+   "method": "POST",
+   "url": "{{ _.base_url }}/chats/{{ _.chat_id }}/messages",
+   "description": "Troque o client_message_id a cada disparo: repetir o mesmo é um retry, e um retry NÃO reanuncia — a mensagem já está lá.",
+   "metaSortKey": 0,
+   "headers": [
     {
-      "_id": "wrk_ws",
-      "_type": "workspace",
-      "name": "Chat Service — WebSocket e fan-out",
-      "description": "Os três endereços de fan-out (ticket 07): o do Chat, o da staff do Chat e o do usuário.",
-      "scope": "collection"
+     "name": "Content-Type",
+     "value": "application/json"
     },
     {
-      "_id": "env_base",
-      "_type": "environment",
-      "parentId": "wrk_ws",
-      "name": "Base Environment",
-      "data": {
-        "base_url": "http://localhost:8000",
-        "ws_base_url": "ws://localhost:8000",
-        "service_token": "change-me",
-        "company_id": "11111111-1111-1111-1111-111111111111",
-        "chat_id": "",
-        "client_chat_id": "",
-        "message_id": "",
-        "cursor": "",
-        "user_a_id": "",
-        "user_b_id": "",
-        "user_c_id": "",
-        "user_d_id": "",
-        "user_e_id": "",
-        "token_a": "",
-        "token_b": "",
-        "token_c": "",
-        "token_d": "",
-        "token_e": ""
-      },
-      "isPrivate": false,
-      "metaSortKey": 0
-    },
-    {
-      "_id": "fld_ws_setup",
-      "_type": "request_group",
-      "parentId": "wrk_ws",
-      "name": "00 - Setup (leia primeiro)",
-      "description": "Rode a coleção \"Composição e lista de Chats\" primeiro, para ter tokens e `chat_id`.\n\nO token vai na QUERY STRING, não em header: um WebSocket de browser não deixa pôr Authorization no handshake. Ele é verificado ANTES do accept() — uma conexão sem autorização é recusada, não aceita e depois fechada.\n\nIMPORTANTE — o drain. Desde o ticket 07 o request não publica: ele grava uma linha no outbox e um processo separado publica. Com `docker compose up` o drain sobe junto. Se você estiver rodando o backend à mão (`uvicorn`), NADA chega no socket até você rodar o drain também — é a causa nº 1 de \"o WebSocket não recebe\".",
-      "metaSortKey": 0
-    },
-    {
-      "_id": "fld_ws_conn",
-      "_type": "request_group",
-      "parentId": "wrk_ws",
-      "name": "01 - Conexões",
-      "description": "1. Abra 'Conectar como B' e deixe aberto.\n2. Dispare 'Enviar como A' (pasta 03).\n3. A mensagem chega no painel de B.\n4. Separadamente, abra 'Conectar como D' e confirme que fecha na hora com 1008.\n5. Para a lista: abra 'Conectar como B (lista de Chats)' e componha um Chat novo pela outra coleção — o resumo chega com unread_count e last_read_at.",
-      "metaSortKey": 1
-    },
-    {
-      "_id": "ws_chat_b",
-      "_type": "websocket_request",
-      "parentId": "fld_ws_conn",
-      "name": "Conectar como B (thread do Chat)",
-      "url": "{{ _.ws_base_url }}/websocket/chats/{{ _.chat_id }}?token={{ _.token_b }}",
-      "description": "Recebe o que for dito no Chat, incluindo mensagens de webhook e os marcadores de exclusão.",
-      "metaSortKey": 0
-    },
-    {
-      "_id": "ws_chat_e",
-      "_type": "websocket_request",
-      "parentId": "fld_ws_conn",
-      "name": "Conectar como E (cliente final, Client Chat)",
-      "url": "{{ _.ws_base_url }}/websocket/chats/{{ _.client_chat_id }}?token={{ _.token_e }}",
-      "description": "Deixe aberto e mande uma Staff-only Message como A. Ela NÃO chega aqui: o isolamento vem do endereço, não de um filtro na entrega.",
-      "metaSortKey": 1
-    },
-    {
-      "_id": "ws_chat_d",
-      "_type": "websocket_request",
-      "parentId": "fld_ws_conn",
-      "name": "Conectar como D (fora do Chat, espere 1008)",
-      "url": "{{ _.ws_base_url }}/websocket/chats/{{ _.chat_id }}?token={{ _.token_d }}",
-      "description": "D não é Participant. Fecha imediatamente com 1008 — e um Chat inexistente fecha igual, pela mesma razão do 404-não-403.",
-      "metaSortKey": 2
-    },
-    {
-      "_id": "ws_user_b",
-      "_type": "websocket_request",
-      "parentId": "fld_ws_conn",
-      "name": "Conectar como B (lista de Chats)",
-      "url": "{{ _.ws_base_url }}/websocket/users/me?token={{ _.token_b }}",
-      "description": "Canal por usuário. Recebe o resumo do Chat sempre que a composição muda ou alguém fala — já com unread_count e last_read_at de B. O canal é user:{company_id}:{user_id}: o mesmo id de usuário pode existir em duas Companies.",
-      "metaSortKey": 3
-    },
-    {
-      "_id": "fld_ws_trigger",
-      "_type": "request_group",
-      "parentId": "wrk_ws",
-      "name": "03 - Disparos (com o socket aberto)",
-      "description": "",
-      "metaSortKey": 2
-    },
-    {
-      "_id": "req_ws_send",
-      "_type": "request",
-      "parentId": "fld_ws_trigger",
-      "name": "Enviar como A",
-      "method": "POST",
-      "url": "{{ _.base_url }}/chats/{{ _.chat_id }}/messages",
-      "description": "Troque o client_message_id a cada disparo: repetir o mesmo é um retry, e um retry NÃO reanuncia — a mensagem já está lá.",
-      "metaSortKey": 0,
-      "headers": [
-        {
-          "name": "Content-Type",
-          "value": "application/json"
-        },
-        {
-          "name": "Authorization",
-          "value": "Bearer {{ _.token_a }}"
-        }
-      ],
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"body\": \"ao vivo\",\n  \"client_message_id\": \"insomnia-ws-001\"\n}"
-      }
-    },
-    {
-      "_id": "req_ws_send_so",
-      "_type": "request",
-      "parentId": "fld_ws_trigger",
-      "name": "Enviar Staff-only como A (Client Chat)",
-      "method": "POST",
-      "url": "{{ _.base_url }}/chats/{{ _.client_chat_id }}/messages",
-      "description": "Vai para o endereço da staff. Com os sockets de B (staff) e E (cliente) abertos, só B recebe.",
-      "metaSortKey": 1,
-      "headers": [
-        {
-          "name": "Content-Type",
-          "value": "application/json"
-        },
-        {
-          "name": "Authorization",
-          "value": "Bearer {{ _.token_a }}"
-        }
-      ],
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"body\": \"so a equipe\",\n  \"client_message_id\": \"insomnia-ws-002\",\n  \"visibility\": \"staff_only\"\n}"
-      }
+     "name": "Authorization",
+     "value": "Bearer {{ _.token_a }}"
     }
-  ]
+   ],
+   "body": {
+    "mimeType": "application/json",
+    "text": "{\n  \"body\": \"ao vivo\",\n  \"client_message_id\": \"insomnia-ws-001\"\n}"
+   }
+  },
+  {
+   "_id": "req_ws_send_so",
+   "_type": "request",
+   "parentId": "fld_ws_trigger",
+   "name": "Enviar Staff-only como A (Client Chat)",
+   "method": "POST",
+   "url": "{{ _.base_url }}/chats/{{ _.client_chat_id }}/messages",
+   "description": "Vai para o endereço da staff. Com os sockets de B (staff) e E (cliente) abertos, só B recebe.",
+   "metaSortKey": 1,
+   "headers": [
+    {
+     "name": "Content-Type",
+     "value": "application/json"
+    },
+    {
+     "name": "Authorization",
+     "value": "Bearer {{ _.token_a }}"
+    }
+   ],
+   "body": {
+    "mimeType": "application/json",
+    "text": "{\n  \"body\": \"so a equipe\",\n  \"client_message_id\": \"insomnia-ws-002\",\n  \"visibility\": \"staff_only\"\n}"
+   }
+  },
+  {
+   "_id": "fld_ws_life",
+   "_type": "request_group",
+   "parentId": "wrk_ws",
+   "name": "04 - Renovação, expulsão e close codes",
+   "description": "RENOVAÇÃO EM BANDA. O token do handshake vale quinze minutos e o serviço avisa 60s antes de expirar. Com um socket aberto por tempo suficiente você recebe:\n  {\"type\": \"token.expiring\", \"expires_at\": \"...\"}\nCole no painel de mensagem do socket (NÃO reconecte) um token novo:\n  {\"type\": \"token.renew\", \"token\": \"<jwt novo>\"}\nE o serviço confirma, sem derrubar:\n  {\"type\": \"token.renewed\", \"expires_at\": \"...\"}\nMint o token novo para a MESMA pessoa:\n  uv run python -m scripts.mint_chat_token --user-id <user_b_id> --name 'Beto Lima'\nUm token de outra pessoa é recusado com 1008: os endereços deste socket foram decididos num handshake que já acabou, e aceitar token de outra pessoa entregaria o fan-out de uma para a outra.\n\nPRAZO. Se a renovação não chegar até o `exp`, o socket fecha com 4401 — não 1008. O token do `--insomnia` vive 12h, então para ver isso sem esperar:\n  uv run python -m scripts.mint_chat_token --user-id <user_b_id> --minutes 1\nCom um minuto de vida o aviso `token.expiring` chega no próprio handshake (o aviso sai 60s antes do exp, e 60s antes já passou) e o 4401 chega um minuto depois.\n\nEXPULSÃO. Com o socket de B aberto no Chat, dispare 'Remover B do Chat' abaixo: aquele socket fecha com 4403 e os outros sockets de B (outros Chats, e o da lista) ficam intactos. Precisa do drain rodando — a expulsão sai pelo outbox, como toda entrega.\n\nREVOGAÇÃO URGENTE. 'Banir B' fecha TODAS as conexões de B e recusa novos handshakes dele até o TTL do token passar. 'Bloquear um token' bloqueia só aquela credencial: uma conexão que já a segura cai na próxima revalidação periódica (até 60s), não na hora.",
+   "metaSortKey": 3
+  },
+  {
+   "_id": "req_ws_remove_b",
+   "_type": "request",
+   "parentId": "fld_ws_life",
+   "name": "Remover B do Chat (espere 4403 no socket de B)",
+   "method": "DELETE",
+   "url": "{{ _.base_url }}/internal/chats/{{ _.chat_id }}/participants/{{ _.user_b_id }}",
+   "headers": [
+    {
+     "name": "Authorization",
+     "value": "Bearer {{ _.service_token }}"
+    },
+    {
+     "name": "X-Acting-User",
+     "value": "{{ _.user_a_id }}"
+    },
+    {
+     "name": "X-Acting-Company",
+     "value": "{{ _.company_id }}"
+    }
+   ],
+   "description": "Fecha as conexões de B NESTE Chat e em nenhum outro. O token de B continua bom para todo o resto — é por isso que as conexões são indexadas por Chat e por usuário.",
+   "metaSortKey": 0
+  },
+  {
+   "_id": "req_ws_ban_b",
+   "_type": "request",
+   "parentId": "fld_ws_life",
+   "name": "Banir B (espere 4403 em TODAS as conexões dele)",
+   "method": "POST",
+   "url": "{{ _.base_url }}/internal/revocations",
+   "body": {
+    "mimeType": "application/json",
+    "text": "{\n  \"company_id\": \"{{ _.company_id }}\",\n  \"user_id\": \"{{ _.user_b_id }}\"\n}"
+   },
+   "headers": [
+    {
+     "name": "Content-Type",
+     "value": "application/json"
+    },
+    {
+     "name": "Authorization",
+     "value": "Bearer {{ _.service_token }}"
+    }
+   ],
+   "description": "204. Sem X-Acting-User: uma demissão não tem autor a nomear deste lado do fio, pela mesma razão que /internal/identity-events não tem.\n\nA entrada expira em CHAT_TOKEN_TTL_SECONDS (900) — o serviço não guarda o que o monólito emitiu, então ela tem que viver o máximo que um token de B ainda poderia viver.\n\nNomear user_id e token juntos, ou nenhum dos dois, é 422: a entrega é at-least-once e um comando que revogou nada e respondeu sucesso seria repetido e acreditado.",
+   "metaSortKey": 1
+  },
+  {
+   "_id": "req_ws_ban_token",
+   "_type": "request",
+   "parentId": "fld_ws_life",
+   "name": "Bloquear um token só (sem tirar o acesso da pessoa)",
+   "method": "POST",
+   "url": "{{ _.base_url }}/internal/revocations",
+   "body": {
+    "mimeType": "application/json",
+    "text": "{\n  \"company_id\": \"{{ _.company_id }}\",\n  \"token\": \"{{ _.token_b }}\"\n}"
+   },
+   "headers": [
+    {
+     "name": "Content-Type",
+     "value": "application/json"
+    },
+    {
+     "name": "Authorization",
+     "value": "Bearer {{ _.service_token }}"
+    }
+   ],
+   "description": "O instrumento estreito: uma credencial que se acredita vazada, sem trancar ninguém para fora. Um token novo para a MESMA pessoa continua abrindo conexão.\n\nA entrada vive o que aquele token tem de vida, e é guardada por digest SHA-256 — um denylist existe para ser lido por quem perguntar, e é o lugar errado para manter uma cópia funcional de uma credencial bearer.",
+   "metaSortKey": 2
+  }
+ ]
 }

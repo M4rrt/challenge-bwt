@@ -24,7 +24,7 @@ from app.schemas.chat import (
     ParticipantIdentity,
 )
 from app.services.identity import message_responses, remember_identities
-from app.services.outbox import enqueue
+from app.services.outbox import enqueue, enqueue_eviction
 from app.services.realtime import address_for_user
 
 
@@ -339,6 +339,13 @@ async def remove_participant(
 
     if participant.left_at is None:
         participant.left_at = datetime.now(timezone.utc)
+        # Removal has to mean removal *now*. Authorising a socket only at its
+        # handshake means the announcement below reaches everyone still in the
+        # Chat while the person removed keeps receiving it until they happen to
+        # reconnect — the hole ADR-0011 names, and the reason the connections are
+        # indexed by user as well as by Chat. It names this Chat and no other:
+        # their token is still good and their other Chats are still theirs.
+        enqueue_eviction(db, scope.company_id, user_id, chat_id=chat_id)
         await _announce_and_commit(db, scope, chat)
     return chat
 

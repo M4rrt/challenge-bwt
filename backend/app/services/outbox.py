@@ -6,13 +6,15 @@ rollback will erase, and nothing is lost if the process dies between the commit
 and the publish.
 """
 
+import uuid
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.outbox import OutboxEvent
-from app.services.realtime import Address, publish
+from app.schemas.eviction import Eviction
+from app.services.realtime import Address, address_for_control, publish
 
 DEFAULT_BATCH = 100
 
@@ -28,6 +30,30 @@ def enqueue(db: AsyncSession, address: Address, payload: str) -> None:
         OutboxEvent(
             company_id=address.company_id, address=address.channel, payload=payload
         )
+    )
+
+
+def enqueue_eviction(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    user_id: uuid.UUID,
+    *,
+    chat_id: uuid.UUID | None = None,
+) -> None:
+    """Close this person's connections, in one Chat or in all of them.
+
+    Spelled once, because two callers write this row for different reasons — a
+    Participant removed, and a credential revoked — and an address built twice is
+    an address that can be built two ways.
+
+    `chat_id` narrows it to the one Chat; leaving it out means every connection
+    they hold. Like every other `enqueue`, it does not commit: the caller decides
+    what this row has to land or not land with.
+    """
+    enqueue(
+        db,
+        address_for_control(company_id),
+        Eviction(company_id=company_id, user_id=user_id, chat_id=chat_id).model_dump_json(),
     )
 
 

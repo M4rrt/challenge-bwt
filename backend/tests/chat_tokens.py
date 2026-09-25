@@ -79,6 +79,7 @@ def make_caller(
     scopes: tuple[str, ...] = ("chat:read", "chat:write"),
     display_name: str = "Ana Souza",
     avatar_url: str | None = None,
+    expires_in: timedelta = timedelta(minutes=15),
 ) -> Caller:
     return Caller(
         id=user_id or uuid.uuid4(),
@@ -87,4 +88,5 @@ def make_caller(
         scopes=scopes,
         display_name=display_name,
         avatar_url=avatar_url,
+        expires_at=datetime.now(timezone.utc) + expires_in,
     )

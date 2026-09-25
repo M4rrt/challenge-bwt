@@ -23,6 +23,7 @@ from app.core.security import get_acting_user, get_command_scope, require_servic
 from app.db import get_db
 from app.schemas.chat import AddParticipantCommand, ChatCommand, ChatComposed
 from app.schemas.identity import IdentityBulkLoad, IdentityEvent
+from app.schemas.revocation import RevocationEvent
 from app.services.chat import (
     ChatNotFoundError,
     ChatShapeError,
@@ -31,6 +32,7 @@ from app.services.chat import (
     create_chat,
     remove_participant,
 )
+from app.services.denylist import apply_revocation
 from app.services.identity import apply_identities
 
 router = APIRouter(prefix="/internal", tags=["internal"])
@@ -122,3 +124,27 @@ async def load_identities(
     newer — the two cannot fight.
     """
     await apply_identities(db, load.identities)
+
+
+@router.post("/revocations", status_code=204)
+async def revoke(
+    event: RevocationEvent,
+    _: None = Depends(require_service_credential),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """The urgent case, and only the urgent case.
+
+    The normal revocation costs nothing and arrives by itself: the monolith stops
+    issuing tokens and the service notices within a lifetime (ADR-0011). This is
+    for when a lifetime is too long, and it does two things — stops the
+    credential being accepted again, and closes what it currently holds.
+
+    No acting-user header, for the reason the identity stream has none: a
+    composition names an author because there is no Chat without one, and a
+    dismissal has nobody to name on this side of the wire.
+
+    204 whether anything was actually holding a connection. At-least-once means a
+    retry must not be told something it would act on differently, and "they were
+    already banned" is this command having already succeeded.
+    """
+    await apply_revocation(db, event)

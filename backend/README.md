@@ -271,6 +271,73 @@ Cada linha é **publicada e só então marcada**. A ordem é a escolha de **at-l
 
 Falha no drain é registrada em log e repetida, não fatal — seguro exatamente por causa dessa ordem: uma queda do Redis deixa toda linha não entregue pendente, e o backlog se drena sozinho quando o Redis volta. O que uma queda dessas move é `oldest_unpublished_age`, o sinal de saúde do tempo real, que o ticket 18 transforma em algo monitorado. É idade e não contagem porque mil linhas escritas há um segundo é um serviço movimentado e uma linha escrita há dez minutos é um drain parado, e uma contagem não distingue os dois.
 
+### A conexão ao vivo: renovação em banda, revalidação e três close codes
+
+Um socket é longo e a credencial dele não é. A [ADR-0011](../docs/adr/0011-revocation-at-the-next-token.md) reconcilia os dois **em banda**: o serviço avisa pouco antes de expirar, o cliente manda um token novo pelo mesmo socket, e o serviço revalida. A alternativa — fechar e deixar reconectar — custa uma query de recuperação a cada quinze minutos e abre uma janela em que mensagem se perde.
+
+O prazo continua existindo como rede de segurança, e ter os dois é o ponto: só o prazo custa uma recuperação por token; só a renovação deixa um caminho em que esquecer de reagendar o prazo mantém a conexão viva para sempre — e esse defeito é silencioso.
+
+**Os frames** (`app/services/connection.py` nomeia cada um em uma constante, para que o nome exista em um lugar só):
+
+| direção | `type` | conteúdo |
+| --- | --- | --- |
+| serviço → cliente | `token.expiring` | `expires_at` — vá buscar um token novo |
+| cliente → serviço | `token.renew` | `token` — o novo, por este mesmo socket |
+| serviço → cliente | `token.renewed` | `expires_at` — aceito, revalidado, a conexão segue |
+
+O aviso sai `RENEWAL_WARNING_LEAD` (60s) antes do `exp` do token. Um `type` que o serviço não conhece continua sendo ignorado, como sempre foi.
+
+**A renovação revalida as duas coisas**: o token *e* a autorização no Chat. Um token que verifica não é a mesma afirmação que um Chat que continua sendo seu — sair de um Chat não aparece em claim nenhuma. O token novo também precisa nomear a **mesma pessoa na mesma Company**: os endereços do socket foram decididos num handshake que já acabou, e aceitar token de outra pessoa entregaria o fan-out de uma para a outra.
+
+**Revalidação periódica** (`REVALIDATION_INTERVAL`, 60s) por cima disso. Ela limita a **um intervalo** — em vez de a um tempo de vida de token — a janela entre uma escrita deste lado e o socket perceber: um Participant removido cuja expulsão não chegou (drain parado, instância que perdeu o frame) e uma entrada de denylist que apareceu enquanto ninguém estava renovando.
+
+**O que ela não faz sozinha é reler uma claim.** Uma desativação e um escopo de supervisão perdido moram no token, e o token não muda entre renovações — rodar o mesmo predicado contra o mesmo `Caller` deriva a mesma resposta, por mais vezes que rode. Esses dois são cobertos pela **renovação** (o monólito emite o próximo token sem o escopo, ou não emite) e, quando um tempo de vida é demais, pelo **denylist**. A [ADR-0011](../docs/adr/0011-revocation-at-the-next-token.md) credita "revalida periodicamente e em toda renovação" com cobrir os dois, e é o par que cobre; a metade periódica sozinha cobre o que este serviço consegue ver por si — ele não tem tabela de usuários para consultar, e consultar o monólito é o que a [ADR-0010](../docs/adr/0010-no-request-depends-on-the-monolith.md) proíbe.
+
+A **renovação** é o que fecha a lacuna que o ticket 07 registrou contra si mesmo: o endereço staff era escolhido no handshake e o handshake nunca era revisitado, então um Participant cujo `user_kind` virasse `client` seguia recebendo Staff-only Message pelo resto daquela conexão. Hoje ele simplesmente deixa de ouvir o endereço que perdeu, sem cair — continua no Chat, só tem direito a um endereço menos. É a renovação e não o tique periódico pela razão do parágrafo acima: `user_kind` é uma claim, então quem a vê mudar é quem recebe um token novo. O tique limita a espera a um tempo de vida de token, que é o que a ADR-0011 compra ao encurtá-lo.
+
+#### Os três close codes
+
+Parte do contrato, não detalhe de implementação (`app/core/close_codes.py`). Tratar os três como falha transforma toda expiração de rotina num backoff crescente; tratar os três como expiração faz o cliente martelar um Chat de que ele foi removido.
+
+| código | significado | o que o cliente faz |
+| --- | --- | --- |
+| `1008` | **unauthenticated** — a credencial nunca valeu aqui | não tenta de novo com ela |
+| `4401` | **token expired** — valeu e acabou | renova e reconecta |
+| `4403` | **access revoked** — a credencial está boa, o Chat não é seu | sai dele, não insiste |
+
+Falha de rede é deliberadamente nenhum dos três: continua sendo erro de socket e continua em backoff exponencial. É isso que faz os três códigos significarem algo.
+
+`1008` é o código de *policy violation* do próprio protocolo, e é o que o handshake sempre respondeu — os outros dois estão na faixa 4000–4999 que o protocolo reserva para a aplicação, com os três últimos dígitos ecoando os status HTTP que um leitor já associa a "quem é você" e "não é seu".
+
+Um Chat que não existe, um Chat de outra Company e um Chat em que você não está fecham todos com `1008`, igual a um token inválido. Os três serem indistinguíveis é a decisão 404-não-403 de `docs/decisions.md` e não está em questão.
+
+**O que está em questão é serem `1008` e não `4403`**, e isso é comportamento que já era assim antes do ticket 11 — foi preservado, não escolhido aqui. O custo é real: a credencial de quem bate num Chat que não é dele está perfeitamente boa, e `1008` diz ao cliente "não tente de novo com ela", o que manda a pessoa para uma tela de login. `4403` — "a credencial está boa, o Chat não é seu, saia dele" — é a instrução correta, e trocar não vazaria nada, porque um token inválido responde `1008` em qualquer Chat e a indistinguibilidade entre os três casos acima se mantém. Não foi trocado porque é mudança de contrato que o ticket 11 não pediu e que a interface (tickets 16 e 17) vai consumir; vale decidir de propósito antes de ela ser escrita.
+
+#### Expulsão: o quarto canal
+
+Autorizar só no connect significa que remover um Participant **avisa o Chat e não expulsa ninguém** — até reconectar, aquela pessoa continua recebendo. Por isso as conexões são indexadas **por Chat e por usuário**: por usuário porque o token dela continua valendo para todo o resto, e por Chat porque perder um Chat não é perder o chat.
+
+A conexão a fechar quase nunca está na instância que tratou a remoção, então a expulsão viaja o mesmo Redis que uma entrega — por um canal próprio, `control:{company_id}`:
+
+- **Não é entrega.** Uma entrega nomeia uma audiência (um canal) e o subscriber encaminha sem saber quem escuta. Uma expulsão nomeia **sockets**, e nenhum nome de canal responde isso.
+- **O prefixo decide, não o payload.** Farejar um `type` dentro de todo frame poria uma regra de volta no caminho quente, que é o defeito que a [ADR-0008](../docs/adr/0008-domain-rewritten-in-fastapi.md) registra.
+- **Vai pelo outbox**, na mesma transação da saída: ninguém é desconectado por uma remoção que um rollback apagou.
+
+Uma expulsão nomeia o Chat (remoção de Participant) ou nenhum (banimento, todas as conexões daquela pessoa). Um payload que não parseia é logado e descartado — deixá-lo subir mataria o subscriber, e um subscriber morto para de entregar tudo naquela instância, em silêncio.
+
+#### O denylist é a exceção, não o caminho normal
+
+O caminho normal não custa nada e chega sozinho: o monólito revoga **não emitindo o próximo token**, e o serviço percebe dentro de um TTL. Para quando quinze minutos é demais — uma demissão, um banimento, uma credencial que se acredita vazada — existe `POST /internal/revocations` (credencial de serviço, sem `X-Acting-User`, pela mesma razão que o stream de identidade não tem: uma demissão não tem autor a nomear deste lado do fio).
+
+- Body `{ "company_id": "<uuid>", "user_id": "<uuid>" }` — tudo o que a pessoa tem. Bloqueia e fecha todas as conexões dela.
+- Body `{ "company_id": "<uuid>", "token": "<jwt>" }` — só aquela credencial, sem tirar o acesso de ninguém. Uma conexão que já a segura cai na próxima revalidação, não na hora: os sockets são indexados por quem os segura, não por qual string apresentaram, e um terceiro índice para a metade mais rara de um caminho de exceção renderia menos do que custa.
+- Nomear os dois, ou nenhum, é `422`. A entrega é at-least-once, então um comando que revogou nada e respondeu sucesso seria repetido, teria sucesso igual, e seria acreditado.
+- `204` mesmo que nada estivesse segurando conexão: "já estava banido" é este comando já tendo funcionado.
+
+**Toda entrada expira junto com o token que ela bloqueia.** É isso que impede o denylist de virar a lista de revogação distribuída que a ADR recusou: nada poda, nada cresce sem limite, e nenhuma entrada sobrevive à credencial de que ela fala. Uma entrada de *usuário* vive `CHAT_TOKEN_TTL_SECONDS` (900), porque o serviço não guarda registro do que o monólito emitiu e portanto não sabe quais tokens daquela pessoa ainda estão fora. Uma entrada de *token* vive o que aquele token tem de vida. O token é guardado por digest SHA-256, não por valor: um denylist existe para ser lido por quem perguntar, e é o lugar errado para manter uma cópia funcional de uma credencial bearer.
+
+O denylist é consultado no **handshake**, em **toda renovação** e em **toda revalidação periódica** — e deliberadamente **não** no caminho HTTP. Ver "Débito técnico conhecido".
+
 Endpoints: `WS /websocket/chats/{id}` e `WS /websocket/users/me`, ambos autenticados via chat token como query param `token` (o handshake do WebSocket não carrega header `Authorization` customizado). Isso tem um custo: query strings tendem a ser gravadas em logs de acesso de proxies/ALB e no histórico do navegador, diferente de um header — trade-off não documentado em nenhum ADR até agora. A alternativa mais comum é conectar sem token e autenticar pela primeira mensagem do socket.
 
 Se a conexão com o Redis cair, `run_subscriber` (`app/services/realtime.py`) simplesmente morre — sem log, sem retry, sem healthcheck que detecte isso. O lado de **publicação** deixou de depender disso (as linhas ficam pendentes e saem quando o Redis volta), mas o lado de **entrega** de uma instância cujo subscriber morreu continua parado em silêncio até o processo ser reiniciado.
@@ -635,6 +702,19 @@ Não bloqueia o funcionamento hoje, mas seria o primeiro ponto de atenção ante
 - **O drain não existe fora do `docker-compose.yml`.** `infra/` define uma task definition e um service, ambos `backend`. Um deploy sem o processo de drain armazena tudo e entrega nada em tempo real, em silêncio. Ticket 20.
 - ~~**Índice de `messages` favorece a query errada.**~~ *(Resolvido no ticket 09: `ix_messages_chat_id_created_at_id`, migration `d8f1a5c37b92`, é `(chat_id, created_at, id)` — o par que o cursor percorre. A constraint de unicidade do ticket 08 continua servindo ao filtro de retry; o que faltava era a ordenação, que o Postgres fazia à parte a cada página.)*
 - **Índice de `participants` favorece a query errada.** O `UniqueConstraint(chat_id, user_id)` serve bem a checagem de membership, mas `list_chats` — chamada a cada carregamento da sidebar — filtra só por `user_id`; faltaria um índice dedicado liderado por esse campo. O `EXISTS` da busca por nome percorre `participants` por `chat_id`, que a constraint já atende.
+- **O denylist não vale para a API, só para os sockets.** `POST /internal/revocations` fecha as conexões
+  da pessoa e recusa novos handshakes, mas `GET /chats`, `GET /chats/{id}/messages` e `POST .../messages`
+  continuam aceitando o token dela até ele expirar — até quinze minutos de leitura depois de um banimento.
+  O que falta é uma linha em `get_current_caller`, e o que ela custa é o motivo de não estar lá: um
+  round-trip ao Redis em **todo** request autenticado, e um Redis fora do ar virando 500 em todo request
+  em vez do que o fan-out faz hoje (as linhas ficam pendentes e saem depois). O ticket 11 pediu fechar as
+  conexões e é o que ele fechou; a decisão de acoplar a disponibilidade da API ao Redis é maior que ele.
+- **Um socket segura uma conexão de banco e uma transação abertas pela vida dele.** `Depends(get_db)` num
+  endpoint WebSocket dá uma sessão por socket, e o primeiro `SELECT` (a autorização do handshake) abre uma
+  transação que fica aberta até o socket cair. Em `READ COMMITTED` isso não é problema de correção — cada
+  statement da revalidação vê dado fresco, que é por que a expulsão por revalidação funciona — mas são
+  N conexões `idle in transaction` para N abas abertas. Já era assim antes do ticket 11; o que mudou é que
+  agora a sessão é realmente usada de novo, uma vez por minuto, em vez de só no handshake.
 - **Sem rate limiting** em `/webhook/messages`.
 - ~~**`GET /chats` ainda devolve o conjunto inteiro.**~~ *(Resolvido no ticket 10: a lista pagina pelo mesmo contrato de cursor de `GET /chats/{id}/messages`, sobre `(última atividade, id do Chat)`, e aceita `search` por nome de participante ou do próprio Chat.)*
 - **A busca só enxerga quem ainda está no Chat.** O `EXISTS` de `_matching_the_search` carrega `STILL_IN_THE_CHAT`, então um 1:1 deixa de ser achável pelo nome da outra pessoa assim que ela sai — e um 1:1 não tem nome próprio para servir de alternativa. É coerente com todo o resto (`participant_user_ids` só mostra quem está), mas um Chat na sua lista que nenhum nome acha é um Chat que só o scroll alcança. Ver `docs/decisions.md`.
