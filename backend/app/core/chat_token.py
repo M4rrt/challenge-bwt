@@ -24,6 +24,18 @@ from app.core.config import settings
 
 CHAT_CLAIM_NAMESPACE = "https://brwinetours.com/chat"
 
+SUPERVISION_SCOPE = "chat:supervise"
+"""The claim that makes a caller a Supervisor, carried as a scope and not a third user kind.
+
+Ticket 13's own note: `may_read` (`core/message_visibility.py`) classifies a
+reader by `ParticipantRole(reader_kind)`, whose members are exactly
+`staff | client`. Reusing that predicate for a Supervisor rather than opening a
+bypass for them only works if the monolith keeps issuing an ordinary
+`user_kind` and adds supervision on top of it here — a token claiming
+`user_kind: "supervisor"` would fall into the default-deny branch and read
+nothing, which is the loud failure the design prefers to a leak.
+"""
+
 
 @dataclass(frozen=True)
 class Caller:
@@ -43,6 +55,17 @@ class Caller:
     display_name: str | None
     avatar_url: str | None
     expires_at: datetime
+
+
+def is_supervisor(caller: Caller) -> bool:
+    """Whether this caller may read their Company's Chats without being a Participant.
+
+    One predicate over the one claim that grants it, asked wherever a read path
+    needs to choose between a Participant's own Chats and the whole Company's —
+    so there is one spelling of "is this caller a Supervisor" and not one per
+    call site.
+    """
+    return SUPERVISION_SCOPE in caller.scopes
 
 
 def _caller_from(claims: dict[str, object]) -> Caller | None:

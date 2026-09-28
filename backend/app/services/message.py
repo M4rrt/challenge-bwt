@@ -5,7 +5,7 @@ from sqlalchemy import ColumnElement, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.chat_token import Caller
+from app.core.chat_token import Caller, is_supervisor
 from app.core.company_scope import CompanyScope
 from app.core.cursor import decode_cursor, encode_cursor, page_of
 from app.core.message_visibility import may_read, readable_visibilities
@@ -105,6 +105,24 @@ async def chat_of_participant(
     if chat is None:
         raise ChatNotFoundError()
     return chat
+
+
+async def chat_for_reading(
+    db: AsyncSession, scope: CompanyScope, caller: Caller, chat_id: uuid.UUID
+) -> Chat:
+    """The Chat this caller may read the history of.
+
+    A Participant reads their own Chat, through `chat_of_participant`. A
+    Supervisor reads any Chat in their Company without being one — ticket 13's
+    whole point — so they go through `assert_chat_exists` instead, which is
+    `scope.select` and nothing else: the Company boundary a Supervisor cannot
+    cross, and no Participant row to require. Write paths do not call this;
+    supervision is a reading scope, and nothing here relaxes who may send or
+    delete a Message.
+    """
+    if is_supervisor(caller):
+        return await assert_chat_exists(db, scope, chat_id)
+    return await chat_of_participant(db, scope, chat_id, caller.id)
 
 
 async def current_participant_ids(
@@ -394,8 +412,13 @@ async def list_messages(
     is not merely omitted from an end client's page — it is not in the sequence
     the cursor walks at all, and the page it would have been in is a full page of
     the messages they may read rather than one with a hole in it.
+
+    The gate is `chat_for_reading` rather than `chat_of_participant`, which is
+    what lets a Supervisor read history here without a Participant row — the
+    visibility filter below is unchanged either way, so what a Supervisor may
+    see inside the Chat still answers to `may_read` alone.
     """
-    chat = await chat_of_participant(db, scope, chat_id, caller.id)
+    chat = await chat_for_reading(db, scope, caller, chat_id)
 
     walking_back = (
         scope.select(Message)
