@@ -9,7 +9,7 @@ from sqlalchemy.orm import aliased, selectinload
 from sqlalchemy.orm.util import AliasedClass
 
 from app.core.acting_user import ActingUser
-from app.core.chat_token import Caller
+from app.core.chat_token import Caller, is_supervisor
 from app.core.company_scope import CompanyScope
 from app.core.cursor import decode_cursor, encode_cursor, page_of
 from app.core.message_visibility import readable_visibilities
@@ -456,20 +456,26 @@ def _activity_of(last_message: Message | None) -> datetime:
 def _chats_of(
     scope: CompanyScope, caller: Caller, last_message: AliasedClass[Message]
 ) -> Select[tuple[Chat, Message | None]]:
-    """The caller's own Chats, each with the last message they may read in it.
+    """The Chats this caller's list shows, each with the last message they may read in it.
 
     The participation filter and the ordering are in one query on purpose. A
     cursor is a position in *this* caller's list; applied to a page some other
     query already chose, it would be a position in a list nobody asked for.
+
+    A Supervisor's list is every Chat in their Company rather than the ones
+    they are a Participant of — the whole of ticket 13's first criterion — so
+    the Participant join and filter drop out for them and nothing else does:
+    the Company boundary is still `scope.select`, the ordering and the cursor
+    are still this same query, and a Supervisor who also happens to be a
+    Participant somewhere still reads their own watermark there through
+    `_read_by`.
     """
-    return (
-        scope.select(Chat)
-        .add_columns(last_message)
-        .join(Participant, Participant.chat_id == Chat.id)
-        .outerjoin(last_message, true())
-        .where(Participant.user_id == caller.id, STILL_IN_THE_CHAT)
-        .options(selectinload(Chat.participants))
-    )
+    query = scope.select(Chat).add_columns(last_message).outerjoin(last_message, true())
+    if not is_supervisor(caller):
+        query = query.join(Participant, Participant.chat_id == Chat.id).where(
+            Participant.user_id == caller.id, STILL_IN_THE_CHAT
+        )
+    return query.options(selectinload(Chat.participants))
 
 
 _LIKE_WILDCARDS = str.maketrans({"\\": "\\\\", "%": "\\%", "_": "\\_"})

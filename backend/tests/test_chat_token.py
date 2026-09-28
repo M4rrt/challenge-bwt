@@ -5,9 +5,9 @@ import pytest
 from httpx import AsyncClient
 from jose import jwt
 
-from app.core.chat_token import verify_chat_token
+from app.core.chat_token import SUPERVISION_SCOPE, is_supervisor, verify_chat_token
 from app.core.config import settings
-from tests.chat_tokens import mint_chat_token
+from tests.chat_tokens import make_caller, mint_chat_token
 
 
 async def test_me_returns_the_identity_the_token_carries(client: AsyncClient):
@@ -114,3 +114,23 @@ def test_a_token_that_never_expires_is_not_a_chat_token():
     rather than a token the service cannot take away.
     """
     assert verify_chat_token(mint_chat_token(expires_in=None)) is None
+
+
+def test_a_caller_carrying_the_supervision_scope_is_a_supervisor():
+    """Supervision travels as a scope, per ADR-0009 — not as a third user kind.
+
+    Ticket 13's own note: `may_read` classifies a reader by
+    `ParticipantRole(reader_kind)`, whose members are exactly `staff | client`.
+    Reusing that predicate for a Supervisor — instead of opening a bypass for
+    them — only works if the Supervisor's token still carries an ordinary
+    `user_kind` and adds supervision on top of it as a scope.
+    """
+    caller = make_caller(scopes=("chat:read", "chat:write", SUPERVISION_SCOPE))
+
+    assert is_supervisor(caller) is True
+
+
+def test_a_caller_without_the_supervision_scope_is_not_a_supervisor():
+    caller = make_caller(scopes=("chat:read", "chat:write"))
+
+    assert is_supervisor(caller) is False
