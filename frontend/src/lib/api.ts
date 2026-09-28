@@ -2,10 +2,35 @@ import { isTokenExpired } from './jwt'
 
 const DEFAULT_API_URL = 'http://localhost:8000'
 
-export const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? DEFAULT_API_URL
-
 export function toWsUrl(apiUrl: string): string {
   return apiUrl.replace(/^http/, 'ws')
+}
+
+function defaultApiUrl(): string {
+  return (import.meta.env.VITE_API_URL as string | undefined) ?? DEFAULT_API_URL
+}
+
+let apiUrl = defaultApiUrl()
+let wsUrl = toWsUrl(apiUrl)
+
+export function getApiUrl(): string {
+  return apiUrl
+}
+
+export function getWsUrl(): string {
+  return wsUrl
+}
+
+/** Learned from the redemption response at runtime; the env var above is only the dev fallback until then. */
+export function setServiceUrls(nextApiUrl: string, nextWsUrl: string): void {
+  apiUrl = nextApiUrl
+  wsUrl = nextWsUrl
+}
+
+/** Back to the dev-fallback host on logout, so a stale chat-service URL never survives into the next session. */
+export function resetServiceUrls(): void {
+  apiUrl = defaultApiUrl()
+  wsUrl = toWsUrl(apiUrl)
 }
 
 export class ApiError extends Error {
@@ -17,6 +42,11 @@ export class ApiError extends Error {
     this.status = status
     this.body = body
   }
+}
+
+/** Shared with monolith.ts, whose calls carry no auth/retry concerns but still need the same body-parsing. */
+export function readJsonBody(response: Response): Promise<unknown> {
+  return response.json().catch(() => undefined)
 }
 
 type RefreshHandler = () => Promise<string>
@@ -44,8 +74,8 @@ export async function apiFetch<T>(
     ...options.headers,
   }
 
-  const response = await fetch(`${API_URL}${path}`, { ...options, headers })
-  const body = await response.json().catch(() => undefined)
+  const response = await fetch(`${getApiUrl()}${path}`, { ...options, headers })
+  const body = await readJsonBody(response)
 
   if (!response.ok) {
     if (response.status === 401 && effectiveToken && refreshHandler && !isRetry) {
@@ -56,55 +86,6 @@ export async function apiFetch<T>(
   }
 
   return body as T
-}
-
-export interface LoginResponse {
-  access_token: string
-  refresh_token: string
-  token_type: string
-}
-
-export interface AccessTokenResponse {
-  access_token: string
-  token_type: string
-}
-
-export interface RegisterResponse {
-  id: string
-  email: string
-  username: string
-}
-
-export function login(email: string, password: string): Promise<LoginResponse> {
-  return apiFetch<LoginResponse>('/auth/login', {
-    method: 'POST',
-    body: JSON.stringify({ email, password }),
-  })
-}
-
-export function refreshAccessToken(refreshToken: string): Promise<AccessTokenResponse> {
-  return apiFetch<AccessTokenResponse>('/auth/refresh', {
-    method: 'POST',
-    body: JSON.stringify({ refresh_token: refreshToken }),
-  })
-}
-
-export function logoutRequest(refreshToken: string): Promise<void> {
-  return apiFetch<void>('/auth/logout', {
-    method: 'POST',
-    body: JSON.stringify({ refresh_token: refreshToken }),
-  })
-}
-
-export function register(
-  email: string,
-  username: string,
-  password: string,
-): Promise<RegisterResponse> {
-  return apiFetch<RegisterResponse>('/auth/register', {
-    method: 'POST',
-    body: JSON.stringify({ email, username, password }),
-  })
 }
 
 export interface CurrentUser {

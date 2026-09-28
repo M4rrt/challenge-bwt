@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { API_URL, toWsUrl } from '../../../lib/api'
+import { getWsUrl } from '../../../lib/api'
 
 interface UseChatSocketOptions {
   chatId: string
@@ -24,7 +24,7 @@ export function useChatSocket({
     let reconnectTimer: ReturnType<typeof setTimeout>
 
     function connect() {
-      const url = `${toWsUrl(API_URL)}/websocket/chats/${chatId}?token=${token}`
+      const url = `${getWsUrl()}/websocket/chats/${chatId}?token=${token}`
       socket = new WebSocket(url)
       socket.onmessage = (event) => onMessage(event.data)
       socket.onclose = () => {

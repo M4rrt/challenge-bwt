@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { API_URL, toWsUrl } from '../../../lib/api'
+import { getWsUrl } from '../../../lib/api'
 
 interface UseUserSocketOptions {
   token: string | undefined
@@ -18,7 +18,7 @@ export function useUserSocket({ token, onMessage, reconnectDelayMs = 2000 }: Use
     let reconnectTimer: ReturnType<typeof setTimeout>
 
     function connect() {
-      const url = `${toWsUrl(API_URL)}/websocket/users/me?token=${token}`
+      const url = `${getWsUrl()}/websocket/users/me?token=${token}`
       socket = new WebSocket(url)
       socket.onmessage = () => onMessage()
       socket.onclose = () => {

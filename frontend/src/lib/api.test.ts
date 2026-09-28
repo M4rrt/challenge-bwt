@@ -3,19 +3,22 @@ import {
   ApiError,
   apiFetch,
   createChat,
+  getApiUrl,
   getMe,
+  getWsUrl,
   listChats,
   listMessages,
   listUsers,
-  login,
-  logoutRequest,
-  refreshAccessToken,
-  register,
+  resetServiceUrls,
   sendMessage,
   sendWebhookMessage,
   setRefreshHandler,
+  setServiceUrls,
   toWsUrl,
 } from './api'
+
+const DEFAULT_API_URL = 'http://localhost:8000'
+const DEFAULT_WS_URL = 'ws://localhost:8000'
 
 function makeJwt(payload: Record<string, unknown>): string {
   const encode = (value: unknown) =>
@@ -30,58 +33,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals()
   setRefreshHandler(null)
-})
-
-describe('login', () => {
-  it('posts credentials to /auth/login and returns the parsed token', async () => {
-    vi.mocked(fetch).mockResolvedValue(
-      new Response(
-        JSON.stringify({ access_token: 'token-123', refresh_token: 'refresh-123', token_type: 'bearer' }),
-        { status: 200 },
-      ),
-    )
-
-    const result = await login('ana@example.com', 'Senha-Forte-123')
-
-    expect(fetch).toHaveBeenCalledWith(
-      'http://localhost:8000/auth/login',
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({ email: 'ana@example.com', password: 'Senha-Forte-123' }),
-      }),
-    )
-    expect(result).toEqual({ access_token: 'token-123', refresh_token: 'refresh-123', token_type: 'bearer' })
-  })
-
-  it('throws an ApiError with the response status on failure', async () => {
-    vi.mocked(fetch).mockResolvedValue(
-      new Response(JSON.stringify({ detail: 'invalid credentials' }), { status: 401 }),
-    )
-
-    await expect(login('ana@example.com', 'wrong-password')).rejects.toThrow(ApiError)
-  })
-})
-
-describe('register', () => {
-  it('posts credentials to /auth/register and returns the created user', async () => {
-    vi.mocked(fetch).mockResolvedValue(
-      new Response(
-        JSON.stringify({ id: 'user-1', email: 'ana@example.com', username: 'ana' }),
-        { status: 201 },
-      ),
-    )
-
-    const result = await register('ana@example.com', 'ana', 'Senha-Forte-123')
-
-    expect(fetch).toHaveBeenCalledWith(
-      'http://localhost:8000/auth/register',
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({ email: 'ana@example.com', username: 'ana', password: 'Senha-Forte-123' }),
-      }),
-    )
-    expect(result).toEqual({ id: 'user-1', email: 'ana@example.com', username: 'ana' })
-  })
+  setServiceUrls(DEFAULT_API_URL, DEFAULT_WS_URL)
 })
 
 describe('getMe', () => {
@@ -311,46 +263,35 @@ describe('toWsUrl', () => {
   })
 })
 
-describe('refreshAccessToken', () => {
-  it('posts the refresh token to /auth/refresh and returns the new access token', async () => {
-    vi.mocked(fetch).mockResolvedValue(
-      new Response(JSON.stringify({ access_token: 'new-token', token_type: 'bearer' }), { status: 200 }),
-    )
-
-    const result = await refreshAccessToken('refresh-123')
-
-    expect(fetch).toHaveBeenCalledWith(
-      'http://localhost:8000/auth/refresh',
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({ refresh_token: 'refresh-123' }),
-      }),
-    )
-    expect(result).toEqual({ access_token: 'new-token', token_type: 'bearer' })
+describe('getApiUrl / getWsUrl / setServiceUrls', () => {
+  it('default to the build-time env var when redemption has not run yet', () => {
+    expect(getApiUrl()).toBe(DEFAULT_API_URL)
+    expect(getWsUrl()).toBe(DEFAULT_WS_URL)
   })
 
-  it('throws an ApiError with the response status on failure', async () => {
-    vi.mocked(fetch).mockResolvedValue(
-      new Response(JSON.stringify({ detail: 'invalid refresh token' }), { status: 401 }),
-    )
+  it('setServiceUrls overrides both at runtime', () => {
+    setServiceUrls('https://chat.example.com', 'wss://chat.example.com')
 
-    await expect(refreshAccessToken('bad-token')).rejects.toThrow(ApiError)
+    expect(getApiUrl()).toBe('https://chat.example.com')
+    expect(getWsUrl()).toBe('wss://chat.example.com')
   })
-})
 
-describe('logoutRequest', () => {
-  it('posts the refresh token to /auth/logout', async () => {
-    vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 204 }))
+  it('apiFetch targets whatever setServiceUrls last set', async () => {
+    setServiceUrls('https://chat.example.com', 'wss://chat.example.com')
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }))
 
-    await logoutRequest('refresh-123')
+    await apiFetch('/some/path')
 
-    expect(fetch).toHaveBeenCalledWith(
-      'http://localhost:8000/auth/logout',
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({ refresh_token: 'refresh-123' }),
-      }),
-    )
+    expect(fetch).toHaveBeenCalledWith('https://chat.example.com/some/path', expect.anything())
+  })
+
+  it('resetServiceUrls reverts to the build-time env fallback', () => {
+    setServiceUrls('https://chat.example.com', 'wss://chat.example.com')
+
+    resetServiceUrls()
+
+    expect(getApiUrl()).toBe(DEFAULT_API_URL)
+    expect(getWsUrl()).toBe(DEFAULT_WS_URL)
   })
 })
 

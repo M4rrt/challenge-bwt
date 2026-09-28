@@ -30,7 +30,8 @@ O dev server roda em `http://localhost:5173`.
 
 ## Variáveis de ambiente
 
-- `VITE_API_URL` — URL base da API do backend.
+- `VITE_API_URL` — fallback de desenvolvimento para a URL base da API do backend. Em produção essa URL é aprendida em runtime na resposta da troca de sessão (`redeemExchangeCode`, ver `src/lib/monolith.ts`) e nunca compilada no bundle — ver [ADR-0006](../docs/adr/0006-session-handoff-via-exchange-code.md).
+- `VITE_MONOLITH_URL` — URL base do monolito BWT, usada apenas para redimir o código de troca e comprar/renovar o chat token (`src/lib/monolith.ts`). Diferente de `VITE_API_URL`, essa é fixa: o endereço do monolito não precisa ser dinâmico, só o do chat.
 - `VITE_WEBHOOK_TEST_SECRET` — precisa bater com o `WEBHOOK_HMAC_SECRET` do backend para a página de teste `/webhook` (ver `docs/adr/0005-client-side-hmac-webhook-test-page.md` na raiz do repositório) assinar as requisições corretamente. Uso exclusivo da página de teste: esse segredo vai junto no bundle do frontend, então nunca configure com um segredo real de produção. Não commite um valor real aqui — `.env` está no `.gitignore`.
 
 ## Build
