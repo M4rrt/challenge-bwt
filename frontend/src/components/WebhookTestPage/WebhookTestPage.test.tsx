@@ -33,7 +33,7 @@ beforeEach(() => {
   vi.stubEnv('VITE_WEBHOOK_TEST_SECRET', 'test-secret')
   vi.mocked(getMe).mockReset()
   vi.mocked(sendWebhookMessage).mockReset()
-  vi.mocked(getMe).mockResolvedValue({ id: 'user-1', email: 'ana@example.com', username: 'ana' })
+  vi.mocked(getMe).mockResolvedValue({ id: 'user-1', company_id: 'company-1', user_kind: 'staff', scopes: [], display_name: 'ana', avatar_url: null })
 })
 
 afterEach(() => {

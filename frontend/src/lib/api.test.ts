@@ -2,13 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   ApiError,
   apiFetch,
-  createChat,
   getApiUrl,
   getMe,
   getWsUrl,
   listChats,
   listMessages,
-  listUsers,
+  markRead,
+  refreshToken,
   resetServiceUrls,
   sendMessage,
   sendWebhookMessage,
@@ -37,10 +37,17 @@ afterEach(() => {
 })
 
 describe('getMe', () => {
-  it('fetches the current user with the given token', async () => {
+  it('fetches the current caller with the given token', async () => {
     vi.mocked(fetch).mockResolvedValue(
       new Response(
-        JSON.stringify({ id: 'user-1', email: 'ana@example.com', username: 'ana' }),
+        JSON.stringify({
+          id: 'user-1',
+          company_id: 'company-1',
+          user_kind: 'staff',
+          scopes: [],
+          display_name: 'Ana',
+          avatar_url: null,
+        }),
         { status: 200 },
       ),
     )
@@ -53,33 +60,25 @@ describe('getMe', () => {
         headers: expect.objectContaining({ Authorization: 'Bearer token-123' }),
       }),
     )
-    expect(result).toEqual({ id: 'user-1', email: 'ana@example.com', username: 'ana' })
-  })
-})
-
-describe('listUsers', () => {
-  it('fetches all users with the given token', async () => {
-    vi.mocked(fetch).mockResolvedValue(
-      new Response(JSON.stringify([{ id: 'user-1', username: 'ana' }]), { status: 200 }),
-    )
-
-    const result = await listUsers('token-123')
-
-    expect(fetch).toHaveBeenCalledWith(
-      'http://localhost:8000/users',
-      expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: 'Bearer token-123' }),
-      }),
-    )
-    expect(result).toEqual([{ id: 'user-1', username: 'ana' }])
+    expect(result).toEqual({
+      id: 'user-1',
+      company_id: 'company-1',
+      user_kind: 'staff',
+      scopes: [],
+      display_name: 'Ana',
+      avatar_url: null,
+    })
   })
 })
 
 describe('listChats', () => {
-  it('fetches the caller chats with the given token', async () => {
+  it('fetches a page of the caller chats with the given token', async () => {
     vi.mocked(fetch).mockResolvedValue(
       new Response(
-        JSON.stringify([{ id: 'chat-1', name: null, participant_user_ids: ['user-1', 'user-2'] }]),
+        JSON.stringify({
+          chats: [{ id: 'chat-1', name: null, participant_user_ids: ['user-1', 'user-2'] }],
+          next_cursor: null,
+        }),
         { status: 200 },
       ),
     )
@@ -92,52 +91,54 @@ describe('listChats', () => {
         headers: expect.objectContaining({ Authorization: 'Bearer token-123' }),
       }),
     )
-    expect(result).toEqual([{ id: 'chat-1', name: null, participant_user_ids: ['user-1', 'user-2'] }])
+    expect(result).toEqual({
+      chats: [{ id: 'chat-1', name: null, participant_user_ids: ['user-1', 'user-2'] }],
+      next_cursor: null,
+    })
   })
-})
 
-describe('createChat', () => {
-  it('posts participant ids and an optional name with the given token', async () => {
+  it('sends search and before as query params when given', async () => {
     vi.mocked(fetch).mockResolvedValue(
-      new Response(
-        JSON.stringify({ id: 'chat-1', name: 'Trio', participant_user_ids: ['user-1', 'user-2', 'user-3'] }),
-        { status: 201 },
-      ),
+      new Response(JSON.stringify({ chats: [], next_cursor: null }), { status: 200 }),
     )
 
-    const result = await createChat(['user-2', 'user-3'], 'Trio', 'token-123')
+    await listChats('token-123', { search: 'bet o', before: 'cursor-1' })
 
     expect(fetch).toHaveBeenCalledWith(
-      'http://localhost:8000/chats',
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({ participant_user_ids: ['user-2', 'user-3'], name: 'Trio' }),
-        headers: expect.objectContaining({ Authorization: 'Bearer token-123' }),
-      }),
+      'http://localhost:8000/chats?search=bet+o&before=cursor-1',
+      expect.anything(),
     )
-    expect(result).toEqual({
-      id: 'chat-1',
-      name: 'Trio',
-      participant_user_ids: ['user-1', 'user-2', 'user-3'],
-    })
+  })
+
+  it('omits query params that were not given', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ chats: [], next_cursor: null }), { status: 200 }),
+    )
+
+    await listChats('token-123')
+
+    expect(fetch).toHaveBeenCalledWith('http://localhost:8000/chats', expect.anything())
   })
 })
 
 describe('listMessages', () => {
-  it('fetches a chat message backlog with the given token', async () => {
+  it('fetches a page of a chat message backlog with the given token', async () => {
     vi.mocked(fetch).mockResolvedValue(
       new Response(
-        JSON.stringify([
-          {
-            id: 'msg-1',
-            chat_id: 'chat-1',
-            sender_id: 'user-1',
-            sender_type: 'user',
-            source_label: null,
-            body: 'oi',
-            created_at: '2026-08-06T12:00:00Z',
-          },
-        ]),
+        JSON.stringify({
+          messages: [
+            {
+              id: 'msg-1',
+              chat_id: 'chat-1',
+              sender_id: 'user-1',
+              sender_type: 'user',
+              source_label: null,
+              body: 'oi',
+              created_at: '2026-08-06T12:00:00Z',
+            },
+          ],
+          next_cursor: null,
+        }),
         { status: 200 },
       ),
     )
@@ -150,22 +151,38 @@ describe('listMessages', () => {
         headers: expect.objectContaining({ Authorization: 'Bearer token-123' }),
       }),
     )
-    expect(result).toEqual([
-      {
-        id: 'msg-1',
-        chat_id: 'chat-1',
-        sender_id: 'user-1',
-        sender_type: 'user',
-        source_label: null,
-        body: 'oi',
-        created_at: '2026-08-06T12:00:00Z',
-      },
-    ])
+    expect(result).toEqual({
+      messages: [
+        {
+          id: 'msg-1',
+          chat_id: 'chat-1',
+          sender_id: 'user-1',
+          sender_type: 'user',
+          source_label: null,
+          body: 'oi',
+          created_at: '2026-08-06T12:00:00Z',
+        },
+      ],
+      next_cursor: null,
+    })
+  })
+
+  it('sends before as a query param when given', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ messages: [], next_cursor: null }), { status: 200 }),
+    )
+
+    await listMessages('chat-1', 'token-123', { before: 'cursor-1' })
+
+    expect(fetch).toHaveBeenCalledWith(
+      'http://localhost:8000/chats/chat-1/messages?before=cursor-1',
+      expect.anything(),
+    )
   })
 })
 
 describe('sendMessage', () => {
-  it('posts a message body to a chat with the given token', async () => {
+  it('posts a message body and client message id to a chat with the given token, defaulting visibility to all', async () => {
     vi.mocked(fetch).mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -181,13 +198,13 @@ describe('sendMessage', () => {
       ),
     )
 
-    const result = await sendMessage('chat-1', 'oi', 'token-123')
+    const result = await sendMessage('chat-1', 'oi', 'client-msg-1', 'token-123')
 
     expect(fetch).toHaveBeenCalledWith(
       'http://localhost:8000/chats/chat-1/messages',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ body: 'oi' }),
+        body: JSON.stringify({ body: 'oi', client_message_id: 'client-msg-1', visibility: 'all' }),
         headers: expect.objectContaining({ Authorization: 'Bearer token-123' }),
       }),
     )
@@ -200,6 +217,66 @@ describe('sendMessage', () => {
       body: 'oi',
       created_at: '2026-08-06T12:00:00Z',
     })
+  })
+
+  it('posts the given visibility when one is passed', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ id: 'msg-1' }), { status: 201 }),
+    )
+
+    await sendMessage('chat-1', 'nota interna', 'client-msg-2', 'token-123', 'staff_only')
+
+    expect(fetch).toHaveBeenCalledWith(
+      'http://localhost:8000/chats/chat-1/messages',
+      expect.objectContaining({
+        body: JSON.stringify({
+          body: 'nota interna',
+          client_message_id: 'client-msg-2',
+          visibility: 'staff_only',
+        }),
+      }),
+    )
+  })
+})
+
+describe('markRead', () => {
+  it('posts the read watermark to a chat with the given token', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({ last_read_at: '2026-08-06T12:00:00Z', last_read_message_id: 'msg-1' }),
+        { status: 200 },
+      ),
+    )
+
+    const result = await markRead(
+      'chat-1',
+      { read_at: '2026-08-06T12:00:00Z', message_id: 'msg-1' },
+      'token-123',
+    )
+
+    expect(fetch).toHaveBeenCalledWith(
+      'http://localhost:8000/chats/chat-1/read',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ read_at: '2026-08-06T12:00:00Z', message_id: 'msg-1' }),
+        headers: expect.objectContaining({ Authorization: 'Bearer token-123' }),
+      }),
+    )
+    expect(result).toEqual({ last_read_at: '2026-08-06T12:00:00Z', last_read_message_id: 'msg-1' })
+  })
+})
+
+describe('refreshToken', () => {
+  it('rejects when no refresh handler has been registered', async () => {
+    await expect(refreshToken()).rejects.toThrow()
+  })
+
+  it('delegates to the registered refresh handler', async () => {
+    const handler = vi.fn().mockResolvedValue('new-token')
+    setRefreshHandler(handler)
+
+    await expect(refreshToken()).resolves.toBe('new-token')
+    expect(handler).toHaveBeenCalledTimes(1)
   })
 })
 

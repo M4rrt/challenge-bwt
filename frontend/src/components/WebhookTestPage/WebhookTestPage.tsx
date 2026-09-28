@@ -104,7 +104,7 @@ function WebhookTestPage() {
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <AvatarFrame src="/logo.png" alt="Avatar do usuário conectado" size={40} />
           <Typography variant="body2" sx={{ fontWeight: 700 }}>
-            Usuário Conectado: {meQuery.data?.username}
+            Usuário Conectado: {meQuery.data?.display_name}
           </Typography>
           <Chip label="Ativo" color="success" size="small" />
         </Box>

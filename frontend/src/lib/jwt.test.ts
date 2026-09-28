@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isTokenExpired } from './jwt'
+import { getUserId, getUserKind, isTokenExpired } from './jwt'
 
 function makeJwt(payload: Record<string, unknown>): string {
   const encode = (value: unknown) =>
@@ -22,5 +22,44 @@ describe('isTokenExpired', () => {
 
   it('returns true for a malformed token', () => {
     expect(isTokenExpired('not-a-real-token')).toBe(true)
+  })
+})
+
+describe('getUserKind', () => {
+  it("reads the user_kind claim from the chat claim namespace", () => {
+    const token = makeJwt({
+      sub: 'user-1',
+      'https://brwinetours.com/chat': { user_kind: 'staff' },
+    })
+
+    expect(getUserKind(token)).toBe('staff')
+  })
+
+  it('returns null when the token carries no chat claims', () => {
+    const token = makeJwt({ sub: 'user-1' })
+
+    expect(getUserKind(token)).toBeNull()
+  })
+
+  it('returns null for a malformed token', () => {
+    expect(getUserKind('not-a-real-token')).toBeNull()
+  })
+})
+
+describe('getUserId', () => {
+  it('reads the sub claim as the caller id', () => {
+    const token = makeJwt({ sub: 'user-1' })
+
+    expect(getUserId(token)).toBe('user-1')
+  })
+
+  it('returns null for a malformed token', () => {
+    expect(getUserId('not-a-real-token')).toBeNull()
+  })
+
+  it('returns null when sub is missing', () => {
+    const token = makeJwt({})
+
+    expect(getUserId(token)).toBeNull()
   })
 })

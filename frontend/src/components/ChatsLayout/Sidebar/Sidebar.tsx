@@ -1,32 +1,28 @@
-import type { FormEvent } from 'react'
-import { useCallback, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { UIEvent } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import Checkbox from '@mui/material/Checkbox'
-import Divider from '@mui/material/Divider'
-import FormControlLabel from '@mui/material/FormControlLabel'
-import IconButton from '@mui/material/IconButton'
+import Chip from '@mui/material/Chip'
 import List from '@mui/material/List'
 import ListItemButton from '@mui/material/ListItemButton'
 import ListItemText from '@mui/material/ListItemText'
 import Paper from '@mui/material/Paper'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import AddIcon from '@mui/icons-material/Add'
-import CloseIcon from '@mui/icons-material/Close'
 import GroupIcon from '@mui/icons-material/Group'
 import LogoutIcon from '@mui/icons-material/Logout'
 import PersonIcon from '@mui/icons-material/Person'
-import { createChat, getMe, listChats, listUsers } from '../../../lib/api'
+import SearchIcon from '@mui/icons-material/Search'
+import { getMe, listChats } from '../../../lib/api'
 import { useAuth } from '../../../lib/auth/AuthContext'
 import { chatLabel } from '../chatLabel'
-import { hasNewActivity, setLastSeenAt } from '../lastSeen'
-import { msnButtonSx } from '../msnButtonStyle'
 import { skyScrollbarSx } from '../scrollbarStyle'
 import { skyTextFieldSx } from '../textFieldStyle'
 import { useUserSocket } from './useUserSocket'
+
+const SEARCH_DEBOUNCE_MS = 300
+const SCROLL_BOTTOM_THRESHOLD_PX = 40
 
 function Sidebar() {
   const auth = useAuth()
@@ -35,37 +31,40 @@ function Sidebar() {
   const { chatId } = useParams<{ chatId: string }>()
   const token = auth.token ?? undefined
 
-  const [isFormOpen, setIsFormOpen] = useState(false)
-  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([])
-  const [groupName, setGroupName] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchInput.trim()), SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [searchInput])
 
   const meQuery = useQuery({ queryKey: ['me'], queryFn: () => getMe(token!), enabled: !!token })
-  const usersQuery = useQuery({
-    queryKey: ['users'],
-    queryFn: () => listUsers(token!),
-    enabled: !!token,
-  })
-  const chatsQuery = useQuery({
-    queryKey: ['chats'],
-    queryFn: () => listChats(token!),
+  const chatsQuery = useInfiniteQuery({
+    queryKey: ['chats', debouncedSearch],
+    queryFn: ({ pageParam }: { pageParam: string | undefined }) =>
+      listChats(token!, { search: debouncedSearch || undefined, before: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     enabled: !!token,
   })
 
-  const handleUserSocketMessage = useCallback(() => {
+  const chats = chatsQuery.data?.pages.flatMap((page) => page.chats) ?? []
+
+  const invalidateChats = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['chats'] })
   }, [queryClient])
 
-  useUserSocket({ token, onMessage: handleUserSocketMessage })
+  function handleUnauthenticated() {
+    auth.logout()
+    navigate('/')
+  }
 
-  const createMutation = useMutation({
-    mutationFn: () => createChat(selectedUserIds, groupName || undefined, token!),
-    onSuccess: (chat) => {
-      queryClient.invalidateQueries({ queryKey: ['chats'] })
-      setIsFormOpen(false)
-      setSelectedUserIds([])
-      setGroupName('')
-      navigate(`/chats/${chat.id}`)
-    },
+  useUserSocket({
+    token,
+    onMessage: invalidateChats,
+    onReconnect: invalidateChats,
+    onUnauthenticated: handleUnauthenticated,
   })
 
   function handleLogout() {
@@ -73,34 +72,13 @@ function Sidebar() {
     navigate('/')
   }
 
-  function handleCloseForm() {
-    setIsFormOpen(false)
-    setSelectedUserIds([])
-    setGroupName('')
-  }
-
-  function markCurrentChatSeen() {
-    if (!chatId || !meQuery.data?.id) return
-    const current = chatsQuery.data?.find((c) => c.id === chatId)
-    if (current) {
-      setLastSeenAt(meQuery.data.id, chatId, current.last_message_at)
+  function handleScroll(event: UIEvent<HTMLUListElement>) {
+    const el = event.currentTarget
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_BOTTOM_THRESHOLD_PX
+    if (nearBottom && chatsQuery.hasNextPage && !chatsQuery.isFetchingNextPage) {
+      chatsQuery.fetchNextPage()
     }
   }
-
-  function toggleParticipant(userId: string) {
-    setSelectedUserIds((current) =>
-      current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId],
-    )
-  }
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    createMutation.mutate()
-  }
-
-  const usernameById = new Map(usersQuery.data?.map((user) => [user.id, user.username]) ?? [])
-  const otherUsers = usersQuery.data?.filter((user) => user.id !== meQuery.data?.id) ?? []
-  const isGroup = selectedUserIds.length > 1
 
   return (
     <Paper
@@ -118,19 +96,16 @@ function Sidebar() {
         ...skyScrollbarSx,
       }}
     >
-      {!isFormOpen && (
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => {
-            setIsFormOpen(true)
-            usersQuery.refetch()
-          }}
-          sx={{ ...msnButtonSx, fontSize: '0.75rem' }}
-        >
-          Nova chat
-        </Button>
-      )}
+      <TextField
+        placeholder="Buscar por nome"
+        value={searchInput}
+        onChange={(event) => setSearchInput(event.target.value)}
+        size="small"
+        sx={skyTextFieldSx}
+        slotProps={{
+          input: { startAdornment: <SearchIcon fontSize="small" sx={{ mr: 0.75, color: 'primary.main' }} /> },
+        }}
+      />
       <Typography
         variant="h6"
         sx={{
@@ -145,24 +120,18 @@ function Sidebar() {
         }}
       >
         <GroupIcon fontSize="small" sx={{ color: 'primary.main' }} />
-        Chats ({chatsQuery.data?.length ?? 0})
+        Chats ({chats.length})
       </Typography>
       <List
-        sx={{
-          flex: isFormOpen ? 'initial' : 1,
-          minHeight: 0,
-          overflowY: 'auto',
-          ...(isFormOpen && { maxHeight: '50%' }),
-          ...skyScrollbarSx,
-        }}
+        onScroll={handleScroll}
+        sx={{ flex: 1, minHeight: 0, overflowY: 'auto', ...skyScrollbarSx }}
       >
-        {chatsQuery.data?.map((chat) => (
+        {chats.map((chat) => (
           <ListItemButton
             key={chat.id}
             component={Link}
             to={`/chats/${chat.id}`}
             selected={chat.id === chatId}
-            onClick={markCurrentChatSeen}
             sx={{
               borderRadius: 1,
               mb: 0.5,
@@ -183,100 +152,22 @@ function Sidebar() {
               <PersonIcon aria-label="Chat individual" fontSize="small" sx={{ color: 'primary.main', mr: 1, flexShrink: 0 }} />
             )}
             <ListItemText
-              primary={chatLabel(chat, meQuery.data?.id, usernameById)}
-              slotProps={{ primary: { noWrap: true } }}
+              primary={chatLabel(chat, meQuery.data?.id)}
+              secondary={chat.last_message?.body || 'Nenhuma mensagem ainda'}
+              slotProps={{ primary: { noWrap: true }, secondary: { noWrap: true } }}
               sx={{ minWidth: 0 }}
             />
-            {chat.id !== chatId &&
-              meQuery.data?.id &&
-              hasNewActivity(meQuery.data.id, chat) && (
-                <Box
-                  component="span"
-                  aria-label="Nova atividade"
-                  sx={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: '50%',
-                    bgcolor: 'primary.main',
-                    display: 'inline-block',
-                    ml: 1,
-                  }}
-                />
-              )}
+            {chat.id !== chatId && chat.unread_count > 0 && (
+              <Chip
+                label={chat.unread_count}
+                size="small"
+                color="primary"
+                sx={{ ml: 1, height: 20, flexShrink: 0 }}
+              />
+            )}
           </ListItemButton>
         ))}
       </List>
-      {isFormOpen && <Divider />}
-      {isFormOpen && (
-        <Box
-          component="form"
-          onSubmit={handleSubmit}
-          sx={{ display: 'flex', flexDirection: 'column', gap: 1, maxHeight: '50%' }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-              Novo Chat:
-            </Typography>
-            <IconButton
-              aria-label="Fechar criação de chat"
-              size="small"
-              onClick={handleCloseForm}
-              sx={{ color: 'error.main' }}
-            >
-              <CloseIcon fontSize="small" />
-            </IconButton>
-          </Box>
-          <Typography variant="subtitle2" component="legend">
-            Participantes
-          </Typography>
-          {isGroup && (
-            <TextField
-              placeholder="Nome do Grupo *"
-              value={groupName}
-              onChange={(event) => setGroupName(event.target.value)}
-              required
-              size="small"
-              sx={skyTextFieldSx}
-            />
-          )}
-          <Box
-            sx={{
-              flex: 1,
-              overflowY: 'auto',
-              display: 'flex',
-              flexDirection: 'column',
-              minHeight: 0,
-              ...skyScrollbarSx,
-            }}
-          >
-            {otherUsers.map((user) => (
-              <FormControlLabel
-                key={user.id}
-                sx={{ width: '100%', mx: 0, minWidth: 0 }}
-                control={
-                  <Checkbox
-                    checked={selectedUserIds.includes(user.id)}
-                    onChange={() => toggleParticipant(user.id)}
-                  />
-                }
-                label={
-                  <Typography noWrap sx={{ minWidth: 0 }}>
-                    {user.username}
-                  </Typography>
-                }
-              />
-            ))}
-          </Box>
-          <Button
-            type="submit"
-            variant="contained"
-            disabled={selectedUserIds.length === 0 || createMutation.isPending}
-            sx={msnButtonSx}
-          >
-            Criar
-          </Button>
-        </Box>
-      )}
       <Button color="error" startIcon={<LogoutIcon />} onClick={handleLogout}>
         Sair
       </Button>
