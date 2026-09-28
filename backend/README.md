@@ -33,7 +33,7 @@ tests/
 
 Na raiz do repositório: `docker compose up`
 
-Isso builda e sobe Postgres, Redis, o backend (com hot-reload) e o frontend juntos. O backend roda as migrations automaticamente na subida e depois serve em `http://localhost:8000`. Health check: `curl http://localhost:8000/health`.
+Isso builda e sobe Postgres, Redis, o backend (com hot-reload) e o frontend juntos. O backend roda as migrations automaticamente na subida e depois serve em `http://localhost:8001`. Health check: `curl http://localhost:8001/health`.
 
 Editar qualquer arquivo em `app/` ou `alembic/` é refletido imediatamente (sem rebuild, sem restart) — o container faz bind-mount desses diretórios e o Uvicorn os observa com `--reload`.
 
@@ -381,7 +381,7 @@ body = b'{"company_id": "0f1d6c21-9a1e-4f7a-9c2b-0f4b1a7e3d55", "chat_id": "3fa8
 signature = hmac.new(settings.webhook_hmac_secret.encode(), body, hashlib.sha256).hexdigest()
 
 httpx.post(
-    "http://localhost:8000/webhook/messages",
+    "http://localhost:8001/webhook/messages",
     content=body,
     headers={"X-Signature": signature, "Content-Type": "application/json"},
 )

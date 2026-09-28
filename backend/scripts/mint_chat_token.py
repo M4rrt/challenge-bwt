@@ -98,8 +98,8 @@ def main() -> None:
         return
 
     environment: dict[str, str] = {
-        "base_url": "http://localhost:8000",
-        "ws_base_url": "ws://localhost:8000",
+        "base_url": "http://localhost:8001",
+        "ws_base_url": "ws://localhost:8001",
         "service_token": settings.internal_service_token,
         "company_id": str(args.company_id),
         "chat_id": "",
