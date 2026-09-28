@@ -8,17 +8,13 @@ function makeMessage(overrides: Partial<Message>): Message {
     chat_id: 'chat-1',
     sender_id: 'user-1',
     sender_type: 'user',
+    sender_display_name: 'ana',
     source_label: null,
     body: 'oi',
     created_at: '2026-08-06T12:00:00Z',
     ...overrides,
   }
 }
-
-const usernameById = new Map([
-  ['user-1', 'ana'],
-  ['user-2', 'beto'],
-])
 
 describe('groupMessages', () => {
   it('collapses consecutive messages from the same sender into one group', () => {
@@ -27,7 +23,7 @@ describe('groupMessages', () => {
       makeMessage({ id: 'msg-2', sender_id: 'user-1' }),
     ]
 
-    const groups = groupMessages(messages, usernameById)
+    const groups = groupMessages(messages)
 
     expect(groups).toHaveLength(1)
     expect(groups[0].messages).toHaveLength(2)
@@ -36,15 +32,25 @@ describe('groupMessages', () => {
 
   it('starts a new group when the sender changes', () => {
     const messages = [
-      makeMessage({ id: 'msg-1', sender_id: 'user-1' }),
-      makeMessage({ id: 'msg-2', sender_id: 'user-2' }),
+      makeMessage({ id: 'msg-1', sender_id: 'user-1', sender_display_name: 'ana' }),
+      makeMessage({ id: 'msg-2', sender_id: 'user-2', sender_display_name: 'beto' }),
     ]
 
-    const groups = groupMessages(messages, usernameById)
+    const groups = groupMessages(messages)
 
     expect(groups).toHaveLength(2)
     expect(groups[0].displayName).toBe('ana')
     expect(groups[1].displayName).toBe('beto')
+  })
+
+  it('falls back to "Usuário" when sender_id is set but the projection has no name for them yet', () => {
+    const messages = [
+      makeMessage({ id: 'msg-1', sender_id: 'user-1', sender_display_name: null }),
+    ]
+
+    const groups = groupMessages(messages)
+
+    expect(groups[0].displayName).toBe('Usuário')
   })
 
   it('falls back to source_label when sender_id is null', () => {
@@ -52,7 +58,7 @@ describe('groupMessages', () => {
       makeMessage({ id: 'msg-1', sender_id: null, sender_type: 'external', source_label: 'Zapier' }),
     ]
 
-    const groups = groupMessages(messages, usernameById)
+    const groups = groupMessages(messages)
 
     expect(groups[0].displayName).toBe('Zapier')
   })
@@ -62,9 +68,20 @@ describe('groupMessages', () => {
       makeMessage({ id: 'msg-1', sender_id: null, sender_type: 'external', source_label: null }),
     ]
 
-    const groups = groupMessages(messages, usernameById)
+    const groups = groupMessages(messages)
 
     expect(groups[0].displayName).toBe('Bot')
+  })
+
+  it('starts a new group when the same sender switches between an ordinary and a Staff-only message', () => {
+    const messages = [
+      makeMessage({ id: 'msg-1', sender_id: 'user-1', visibility: 'all' }),
+      makeMessage({ id: 'msg-2', sender_id: 'user-1', visibility: 'staff_only' }),
+    ]
+
+    const groups = groupMessages(messages)
+
+    expect(groups).toHaveLength(2)
   })
 
   it('starts a new group when sender_id is null but source_label differs', () => {
@@ -83,7 +100,7 @@ describe('groupMessages', () => {
       }),
     ]
 
-    const groups = groupMessages(messages, usernameById)
+    const groups = groupMessages(messages)
 
     expect(groups).toHaveLength(2)
     expect(groups[0].displayName).toBe('Insomnia Test')
@@ -93,7 +110,7 @@ describe('groupMessages', () => {
   it('marks a group as "me" when the message sender is the current user', () => {
     const messages = [makeMessage({ id: 'msg-1', sender_id: 'user-1' })]
 
-    const groups = groupMessages(messages, usernameById, 'user-1')
+    const groups = groupMessages(messages, 'user-1')
 
     expect(groups[0].senderKind).toBe('me')
   })
@@ -101,7 +118,7 @@ describe('groupMessages', () => {
   it('marks a group as "other" when the message sender is a different user', () => {
     const messages = [makeMessage({ id: 'msg-1', sender_id: 'user-2' })]
 
-    const groups = groupMessages(messages, usernameById, 'user-1')
+    const groups = groupMessages(messages, 'user-1')
 
     expect(groups[0].senderKind).toBe('other')
   })
@@ -111,7 +128,7 @@ describe('groupMessages', () => {
       makeMessage({ id: 'msg-1', sender_id: null, sender_type: 'external', source_label: 'Zapier' }),
     ]
 
-    const groups = groupMessages(messages, usernameById, 'user-1')
+    const groups = groupMessages(messages, 'user-1')
 
     expect(groups[0].senderKind).toBe('external')
   })
@@ -122,7 +139,7 @@ describe('groupMessages', () => {
       makeMessage({ id: 'msg-2', sender_id: 'user-1', created_at: '2026-08-06T12:05:00Z' }),
     ]
 
-    const groups = groupMessages(messages, usernameById)
+    const groups = groupMessages(messages)
 
     expect(groups[0].timestamp).toBe(
       new Date('2026-08-06T12:00:00Z').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),

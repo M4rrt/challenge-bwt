@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from '../../lib/auth/AuthContext'
-import { getMe, listChats, listMessages, listUsers } from '../../lib/api'
+import type { Chat, ChatPage, Message, MessagePage } from '../../lib/api'
+import { getMe, listChats, listMessages, markRead } from '../../lib/api'
 import ChatsLayout from './ChatsLayout'
 import ChatEmptyState from './ChatEmptyState/ChatEmptyState'
 import ChatThread from './ChatThread/ChatThread'
@@ -14,9 +15,9 @@ vi.mock('../../lib/api', async () => {
   return {
     ...actual,
     getMe: vi.fn(),
-    listUsers: vi.fn(),
     listChats: vi.fn(),
     listMessages: vi.fn(),
+    markRead: vi.fn(),
   }
 })
 
@@ -24,12 +25,49 @@ class FakeWebSocket {
   static instances: FakeWebSocket[] = []
   url: string
   onmessage: ((event: { data: string }) => void) | null = null
-  onclose: (() => void) | null = null
+  onclose: ((event: { code: number }) => void) | null = null
   constructor(url: string) {
     this.url = url
     FakeWebSocket.instances.push(this)
   }
   close() {}
+}
+
+function makeChat(overrides: Partial<Chat>): Chat {
+  return {
+    id: 'chat-1',
+    type: 'staff',
+    name: null,
+    participant_user_ids: ['me-id', 'beto-id'],
+    last_message: null,
+    last_message_at: null,
+    unread_count: 0,
+    last_read_at: null,
+    last_read_message_id: null,
+    ...overrides,
+  }
+}
+
+function makeMessage(overrides: Partial<Message>): Message {
+  return {
+    id: 'msg-1',
+    chat_id: 'chat-1',
+    sender_id: 'beto-id',
+    sender_type: 'user',
+    sender_display_name: 'beto',
+    source_label: null,
+    body: 'oi ana',
+    created_at: '2026-08-06T12:00:00Z',
+    ...overrides,
+  }
+}
+
+function chatPage(chats: Chat[]): ChatPage {
+  return { chats, next_cursor: null }
+}
+
+function messagePage(messages: Message[]): MessagePage {
+  return { messages, next_cursor: null }
 }
 
 beforeEach(() => {
@@ -39,16 +77,15 @@ beforeEach(() => {
   vi.stubGlobal('WebSocket', FakeWebSocket)
   vi.mocked(getMe).mockReset().mockResolvedValue({
     id: 'me-id',
-    email: 'ana@example.com',
-    username: 'ana',
+    company_id: 'company-1',
+    user_kind: 'staff',
+    scopes: [],
+    display_name: 'ana',
+    avatar_url: null,
   })
-  vi.mocked(listUsers).mockReset().mockResolvedValue([
-    { id: 'me-id', username: 'ana' },
-    { id: 'beto-id', username: 'beto' },
-    { id: 'carla-id', username: 'carla' },
-  ])
-  vi.mocked(listChats).mockReset().mockResolvedValue([])
-  vi.mocked(listMessages).mockReset().mockResolvedValue([])
+  vi.mocked(listChats).mockReset().mockResolvedValue(chatPage([]))
+  vi.mocked(listMessages).mockReset().mockResolvedValue(messagePage([]))
+  vi.mocked(markRead).mockReset().mockResolvedValue({ last_read_at: null, last_read_message_id: null })
 })
 
 describe('ChatsLayout', () => {
@@ -93,30 +130,15 @@ describe('ChatsLayout', () => {
     )
   })
 
-  it('does not show a stale new-activity indicator on the chat just left, after a live message arrived while it was open', async () => {
-    vi.mocked(listChats)
-      .mockResolvedValueOnce([
-        { id: 'chat-1', name: null, participant_user_ids: ['me-id', 'beto-id'], last_message_at: '2026-08-06T12:00:00Z' },
-        { id: 'chat-2', name: null, participant_user_ids: ['me-id', 'carla-id'], last_message_at: null },
-      ])
-      .mockResolvedValue([
-        { id: 'chat-1', name: null, participant_user_ids: ['me-id', 'beto-id'], last_message_at: '2026-08-06T12:05:00Z' },
-        { id: 'chat-2', name: null, participant_user_ids: ['me-id', 'carla-id'], last_message_at: null },
-      ])
+  it('wires Sidebar and ChatThread together: opening a chat connects both sockets, marks it read, and a live message updates both the thread and (via the user socket) the list', async () => {
+    vi.mocked(listChats).mockResolvedValue(
+      chatPage([
+        makeChat({ id: 'chat-1' }),
+        makeChat({ id: 'chat-2', name: 'Carla', participant_user_ids: ['me-id', 'carla-id'] }),
+      ]),
+    )
     vi.mocked(listMessages).mockImplementation(async (chatId: string) =>
-      chatId === 'chat-1'
-        ? [
-            {
-              id: 'msg-1',
-              chat_id: 'chat-1',
-              sender_id: 'beto-id',
-              sender_type: 'user',
-              source_label: null,
-              body: 'oi ana',
-              created_at: '2026-08-06T12:00:00Z',
-            },
-          ]
-        : [],
+      messagePage(chatId === 'chat-1' ? [makeMessage({})] : []),
     )
     const user = userEvent.setup()
 
@@ -135,7 +157,15 @@ describe('ChatsLayout', () => {
     )
 
     await screen.findByText('oi ana')
+    await screen.findByText('Carla')
     await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(2))
+    await waitFor(() =>
+      expect(markRead).toHaveBeenCalledWith(
+        'chat-1',
+        expect.objectContaining({ message_id: 'msg-1' }),
+        'token-123',
+      ),
+    )
 
     const chatSocket = FakeWebSocket.instances.find((instance) =>
       instance.url.includes('/websocket/chats/'),
@@ -143,28 +173,30 @@ describe('ChatsLayout', () => {
     const userSocket = FakeWebSocket.instances.find((instance) =>
       instance.url.includes('/websocket/users/me'),
     )!
+    const listChatsCallsBefore = vi.mocked(listChats).mock.calls.length
 
-    // A new message arrives in chat-1 while it's still open: the chat
-    // socket delivers it to ChatThread, and the user socket tells Sidebar to
-    // refetch, picking up the newer last_message_at from the mock above.
     chatSocket.onmessage?.({
-      data: JSON.stringify({
-        id: 'msg-2',
-        chat_id: 'chat-1',
-        sender_id: 'beto-id',
-        sender_type: 'user',
-        source_label: null,
-        body: 'chegou ao vivo',
-        created_at: '2026-08-06T12:05:00Z',
-      }),
+      data: JSON.stringify(makeMessage({ id: 'msg-2', body: 'chegou ao vivo' })),
     })
     userSocket.onmessage?.({ data: '{}' })
 
-    await waitFor(() => expect(listChats).toHaveBeenCalledTimes(2))
     await screen.findByText('chegou ao vivo')
+    await waitFor(() =>
+      expect(vi.mocked(listChats).mock.calls.length).toBeGreaterThan(listChatsCallsBefore),
+    )
 
-    await user.click(screen.getByText('carla'))
+    vi.mocked(markRead).mockClear()
+    await user.click(screen.getByText('Carla'))
 
-    expect(screen.queryByLabelText('Nova atividade')).not.toBeInTheDocument()
+    // Leaving chat-1 marks *it* as read, up through the message that arrived live while it was
+    // open — not chat-2, the one just entered (the mutation's chatId/token travel as variables
+    // rather than a closure precisely to keep this call correctly attributed after a navigation).
+    await waitFor(() =>
+      expect(markRead).toHaveBeenCalledWith(
+        'chat-1',
+        expect.objectContaining({ message_id: 'msg-2' }),
+        'token-123',
+      ),
+    )
   })
 })

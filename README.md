@@ -13,7 +13,7 @@ docker compose up
 Sobe Postgres, Redis, backend (FastAPI, hot-reload) e frontend (Vite, HMR) juntos:
 
 - Frontend: http://localhost:5173
-- Backend: http://localhost:8000 (health check: `curl http://localhost:8000/health`)
+- Backend: http://localhost:8001 (health check: `curl http://localhost:8001/health`)
 - O backend roda as migrations do Alembic automaticamente na subida.
 
 Detalhes de cada camada (rodar sem Docker, variáveis de ambiente, testes, migrations) estão nos READMEs próprios:

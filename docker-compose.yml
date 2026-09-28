@@ -59,7 +59,7 @@ services:
     build:
       context: ./frontend
     environment:
-      VITE_API_URL: http://localhost:8000
+      VITE_API_URL: http://localhost:8001
       VITE_WEBHOOK_TEST_SECRET: change-me
     ports:
       - "5173:5173"
@@ -71,12 +71,12 @@ services:
     build:
       context: ./backend
       target: builder
-    command: sh -c "uv run --no-sync alembic upgrade head && uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    command: sh -c "uv run --no-sync alembic upgrade head && uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload"
     environment:
       <<: *backend-env
       FRONTEND_ORIGIN: http://localhost:5173
     ports:
-      - "8000:8000"
+      - "8001:8001"
     volumes:
       - ./backend/app:/app/app
       - ./backend/alembic:/app/alembic

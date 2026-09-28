@@ -1,43 +1,23 @@
-import { useEffect } from 'react'
-import { getWsUrl } from '../../../lib/api'
+import { useResilientSocket } from '../../../lib/useResilientSocket'
 
 interface UseUserSocketOptions {
   token: string | undefined
   onMessage: () => void
-  reconnectDelayMs?: number
+  onUnauthenticated?: () => void
+  onReconnect?: () => void
 }
 
-export function useUserSocket({ token, onMessage, reconnectDelayMs = 2000 }: UseUserSocketOptions): void {
-  useEffect(() => {
-    if (!token) {
-      return
-    }
-
-    let deliberateClose = false
-    let socket: WebSocket
-    let reconnectTimer: ReturnType<typeof setTimeout>
-
-    function connect() {
-      const url = `${getWsUrl()}/websocket/users/me?token=${token}`
-      socket = new WebSocket(url)
-      socket.onmessage = () => onMessage()
-      socket.onclose = () => {
-        if (!deliberateClose) {
-          reconnectTimer = setTimeout(connect, reconnectDelayMs)
-        }
-      }
-    }
-
-    connect()
-
-    return () => {
-      deliberateClose = true
-      clearTimeout(reconnectTimer)
-      if (socket.readyState === WebSocket.OPEN) {
-        socket.close()
-      } else if (socket.readyState === WebSocket.CONNECTING) {
-        socket.addEventListener('open', () => socket.close(), { once: true })
-      }
-    }
-  }, [token, onMessage, reconnectDelayMs])
+export function useUserSocket({
+  token,
+  onMessage,
+  onUnauthenticated,
+  onReconnect,
+}: UseUserSocketOptions): void {
+  useResilientSocket({
+    token,
+    path: '/websocket/users/me',
+    onMessage,
+    onUnauthenticated,
+    onReconnect,
+  })
 }

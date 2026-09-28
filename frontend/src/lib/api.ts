@@ -57,6 +57,14 @@ export function setRefreshHandler(handler: RefreshHandler | null) {
   refreshHandler = handler
 }
 
+/** The same credential refresh apiFetch uses on a 401 or a proactive expiry check, exposed for the WebSocket hooks. */
+export function refreshToken(): Promise<string> {
+  if (!refreshHandler) {
+    return Promise.reject(new Error('no refresh handler registered'))
+  }
+  return refreshHandler()
+}
+
 export async function apiFetch<T>(
   path: string,
   options: RequestInit = {},
@@ -88,49 +96,51 @@ export async function apiFetch<T>(
   return body as T
 }
 
+/** The wire shape of `app.schemas.caller.CallerRead` — everything this service knows about the caller from their token, and nothing more (it holds no user table). */
 export interface CurrentUser {
   id: string
-  email: string
-  username: string
+  company_id: string
+  user_kind: 'staff' | 'client'
+  scopes: string[]
+  display_name: string | null
+  avatar_url: string | null
 }
 
-export interface UserSummary {
-  id: string
-  username: string
-}
+export type ChatType = 'staff' | 'client'
+export type MessageVisibility = 'all' | 'staff_only'
 
 export interface Chat {
   id: string
+  type: ChatType
   name: string | null
   participant_user_ids: string[]
+  last_message: Message | null
   last_message_at: string | null
+  unread_count: number
+  last_read_at: string | null
+  last_read_message_id: string | null
+}
+
+export interface ChatPage {
+  chats: Chat[]
+  next_cursor: string | null
 }
 
 export function getMe(token: string): Promise<CurrentUser> {
   return apiFetch<CurrentUser>('/auth/me', {}, token)
 }
 
-export function listUsers(token: string): Promise<UserSummary[]> {
-  return apiFetch<UserSummary[]>('/users', {}, token)
+export interface ListChatsOptions {
+  search?: string
+  before?: string
 }
 
-export function listChats(token: string): Promise<Chat[]> {
-  return apiFetch<Chat[]>('/chats', {}, token)
-}
-
-export function createChat(
-  participantUserIds: string[],
-  name: string | undefined,
-  token: string,
-): Promise<Chat> {
-  return apiFetch<Chat>(
-    '/chats',
-    {
-      method: 'POST',
-      body: JSON.stringify({ participant_user_ids: participantUserIds, name }),
-    },
-    token,
-  )
+export function listChats(token: string, options: ListChatsOptions = {}): Promise<ChatPage> {
+  const params = new URLSearchParams()
+  if (options.search) params.set('search', options.search)
+  if (options.before) params.set('before', options.before)
+  const query = params.toString()
+  return apiFetch<ChatPage>(`/chats${query ? `?${query}` : ''}`, {}, token)
 }
 
 export interface Message {
@@ -138,23 +148,70 @@ export interface Message {
   chat_id: string
   sender_id: string | null
   sender_type: string
+  sender_display_name?: string | null
+  sender_avatar_url?: string | null
   source_label: string | null
+  client_message_id?: string | null
+  visibility?: MessageVisibility
   body: string
   created_at: string
+  deleted_at?: string | null
+  /** Frontend-only: an optimistic bubble not yet confirmed by the server. Never sent over the wire. */
+  pending?: boolean
 }
 
-export function listMessages(chatId: string, token: string): Promise<Message[]> {
-  return apiFetch<Message[]>(`/chats/${chatId}/messages`, {}, token)
+export interface MessagePage {
+  messages: Message[]
+  next_cursor: string | null
+}
+
+export interface ListMessagesOptions {
+  before?: string
+}
+
+export function listMessages(
+  chatId: string,
+  token: string,
+  options: ListMessagesOptions = {},
+): Promise<MessagePage> {
+  const params = new URLSearchParams()
+  if (options.before) params.set('before', options.before)
+  const query = params.toString()
+  return apiFetch<MessagePage>(
+    `/chats/${chatId}/messages${query ? `?${query}` : ''}`,
+    {},
+    token,
+  )
 }
 
 export function sendMessage(
   chatId: string,
   body: string,
+  clientMessageId: string,
   token: string,
+  visibility: MessageVisibility = 'all',
 ): Promise<Message> {
   return apiFetch<Message>(
     `/chats/${chatId}/messages`,
-    { method: 'POST', body: JSON.stringify({ body }) },
+    { method: 'POST', body: JSON.stringify({ body, client_message_id: clientMessageId, visibility }) },
+    token,
+  )
+}
+
+export interface MarkRead {
+  read_at: string
+  message_id?: string
+}
+
+export interface ReadState {
+  last_read_at: string | null
+  last_read_message_id: string | null
+}
+
+export function markRead(chatId: string, data: MarkRead, token: string): Promise<ReadState> {
+  return apiFetch<ReadState>(
+    `/chats/${chatId}/read`,
+    { method: 'POST', body: JSON.stringify(data) },
     token,
   )
 }
