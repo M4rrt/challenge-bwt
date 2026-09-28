@@ -16,6 +16,7 @@ from app.services.outbox import drain_once
 from tests.chat_tokens import bearer, caller_token
 from tests.chats import open_chat_of
 from tests.messages import say
+from tests.sockets import receive_content
 
 
 async def test_a_staff_only_message_reaches_the_staff_socket_and_not_the_end_clients(
@@ -55,8 +56,8 @@ async def test_a_staff_only_message_reaches_the_staff_socket_and_not_the_end_cli
                 await say(client, chat_id, headers_a, body, visibility=visibility)
             await drain_once(db_session)
 
-            staff_saw = [(await staff.receive_json(timeout=5))["body"] for _ in range(3)]
-            buyer_saw = [(await buyer.receive_json(timeout=5))["body"] for _ in range(2)]
+            staff_saw = [(await receive_content(staff))["body"] for _ in range(3)]
+            buyer_saw = [(await receive_content(buyer))["body"] for _ in range(2)]
 
     assert staff_saw == ["um", "segredo", "dois"]
     assert buyer_saw == ["um", "dois"]

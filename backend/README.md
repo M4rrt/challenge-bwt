@@ -342,6 +342,18 @@ Endpoints: `WS /websocket/chats/{id}` e `WS /websocket/users/me`, ambos autentic
 
 Se a conexão com o Redis cair, `run_subscriber` (`app/services/realtime.py`) simplesmente morre — sem log, sem retry, sem healthcheck que detecte isso. O lado de **publicação** deixou de depender disso (as linhas ficam pendentes e saem quando o Redis volta), mas o lado de **entrega** de uma instância cujo subscriber morreu continua parado em silêncio até o processo ser reiniciado.
 
+### Presença e digitação (`app/services/presence.py`)
+
+Puro Redis, sem tabela por trás — a mesma propriedade que o módulo de origem tinha, e pelo mesmo motivo: presença é um fato sobre *este instante*, não um registro que alguém precisa depois que a conexão que o tornou verdadeiro já se foi.
+
+**Presença é uma contagem de conexões abertas por (Company, Chat, usuário)**, não uma flag — duas abas da mesma pessoa no mesmo Chat não podem anunciar offline quando só uma delas fecha. A chave (`presence:{company_id}:{chat_id}:{user_id}`) carrega um TTL de 120s, maior que `REVALIDATION_INTERVAL` (60s), que é o que a renova sem um timer próprio: uma conexão comum nunca deixa a chave expirar sozinha. O TTL existe só para a conexão que não chega a se despedir — um processo morto não roda `finally`, e é isso que impede essa pessoa de continuar lendo como online para sempre.
+
+- `presence.online` / `presence.offline` — servidor → Chat, publicados no mesmo endereço `chat:{company_id}:{chat_id}` de qualquer entrega, no connect e no disconnect de uma conexão de Chat (não a de `/websocket/users/me`, que não nomeia um Chat). Só a *primeira* conexão de alguém anuncia online, e só quando a *última* fecha é que sai o offline.
+- `presence.snapshot` — servidor → só quem acabou de conectar, uma vez, logo após o accept e antes de qualquer outra coisa: quem já está online agora, o que um online/offline futuro não consegue contar a quem chegou depois. `known: false` diferencia um Redis fora do ar de um Chat em que ninguém por acaso está online — as duas coisas não podem parecer iguais para quem decide se confia numa lista vazia.
+- `typing` — cliente → servidor → Chat (`app/services/connection.py`), um relay puro sem chave nenhuma no Redis. Não existe `typing.stop`: cada anúncio carrega `expires_at` alguns segundos à frente, e um cliente que para de ouvir o remetente repetir deixa seu próprio indicador expirar nesse prazo.
+
+**Uma falha no store nunca derruba a conexão.** Toda função de `presence.py` loga e devolve um valor que significa "não sei" em vez de propagar o erro — `who_is_online` devolve `None` em vez de `[]`, que são respostas diferentes (perguntou e ninguém está online / não deu para perguntar) — e mensagem não lê este módulo em ponto nenhum do seu caminho, então uma queda aqui não tem o que derrubar do lado de envio e leitura.
+
 ## Autenticação
 
 JWT de acesso de curta duração + refresh token opaco (ver [ADR-0004](../docs/adr/0004-jwt-in-localstorage.md) para o trade-off de guardar o JWT em `localStorage`). Duas decisões do refresh token, não cobertas na ADR:

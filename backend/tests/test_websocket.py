@@ -10,6 +10,7 @@ from app.services.outbox import drain_once
 from tests.chats import open_chat_id
 from tests.chat_tokens import bearer, caller_token
 from tests.messages import say
+from tests.sockets import receive_content
 
 
 async def test_participant_receives_message_sent_by_another_participant_over_websocket(
@@ -34,7 +35,7 @@ async def test_participant_receives_message_sent_by_another_participant_over_web
             assert response.status_code == 201
             await drain_once(db_session)
 
-            received = await ws.receive_json(timeout=5)
+            received = await receive_content(ws)
 
     assert received["body"] == "oi"
     assert received["chat_id"] == chat_id

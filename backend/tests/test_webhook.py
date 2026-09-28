@@ -14,6 +14,7 @@ from app.main import app
 from app.services.outbox import drain_once
 from tests.chats import open_chat_id
 from tests.chat_tokens import DEFAULT_COMPANY_ID, bearer, caller_token
+from tests.sockets import receive_content
 
 
 def _sign(body: bytes) -> str:
@@ -151,7 +152,7 @@ async def test_webhook_message_delivered_live_to_connected_participant(
             assert response.status_code == 201
             await drain_once(db_session)
 
-            received = await ws.receive_json(timeout=5)
+            received = await receive_content(ws)
 
     assert received["body"] == "shipped"
     assert received["chat_id"] == chat_id
@@ -212,7 +213,7 @@ async def test_webhook_message_not_delivered_to_other_chat(
             assert own_response.status_code == 201
             await drain_once(db_session)
 
-            received = await ws.receive_json(timeout=5)
+            received = await receive_content(ws)
 
     assert received["body"] == "own message"
     assert received["chat_id"] == other_chat_id

@@ -36,6 +36,7 @@ from collections.abc import Iterable, MutableMapping
 from dataclasses import dataclass
 from typing import TypeVar
 
+import anyio
 import redis.asyncio as redis
 from fastapi import WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
@@ -176,8 +177,13 @@ class ConnectionManager:
 
         A frame comes back from Redis carrying a channel name and nothing else,
         so the lookup has to be answerable from a string.
+
+        A copy, like `connections_of` and `every_connection_of` — here for
+        iteration safety rather than because a caller closes sockets: delivery
+        `await`s between sockets, and a disconnect racing that loop would
+        otherwise mutate the very set it is iterating.
         """
-        return self._by_address.get(channel, set())
+        return set(self._by_address.get(channel, ()))
 
     def connections_of(self, holder: Holder) -> set[WebSocket]:
         """That person's connections in that one Chat — a copy, because callers close them."""
@@ -201,6 +207,34 @@ async def close_quietly(websocket: WebSocket, code: CloseCode) -> None:
     """
     with contextlib.suppress(RuntimeError, WebSocketDisconnect):
         await websocket.close(code=code)
+
+
+async def _deliver_quietly(websocket: WebSocket, payload: str) -> None:
+    """Send, and do not mind a socket that disconnected between the index read and this.
+
+    `connections_for` hands back a snapshot; the socket it names can close in
+    the gap between that read and the `send_text` below, ordinarily — a network
+    drop needs nobody's cooperation. Before presence, nothing published often
+    enough to make that gap worth guarding: a delivery that lost this race took
+    the rest of `run_subscriber`'s loop with it, and with it every other
+    connection this instance was about to serve. Presence announces on every
+    connect and disconnect, which is exactly what makes that gap routine rather
+    than rare.
+
+    `OSError` and `anyio.BrokenResourceError` are here alongside the clean-close
+    exceptions because the drop this guards against is not always clean: a dead
+    TCP connection can surface as a broken-pipe write at the transport rather
+    than as the orderly `WebSocketDisconnect`/`ClosedResourceError` a close
+    produces, and either one loses the same race the docstring above describes.
+    """
+    with contextlib.suppress(
+        RuntimeError,
+        WebSocketDisconnect,
+        anyio.ClosedResourceError,
+        anyio.BrokenResourceError,
+        OSError,
+    ):
+        await websocket.send_text(payload)
 
 
 _publish_client: redis.Redis = redis.Redis.from_url(settings.redis_url, decode_responses=True)
@@ -263,7 +297,7 @@ async def run_subscriber(subscribed: asyncio.Event | None = None) -> None:
                 await carry_out(event["data"])
                 continue
             for websocket in connection_manager.connections_for(event["channel"]):
-                await websocket.send_text(event["data"])
+                await _deliver_quietly(websocket, event["data"])
     finally:
         await pubsub.punsubscribe(*CHANNEL_PATTERNS)
         await pubsub.aclose()

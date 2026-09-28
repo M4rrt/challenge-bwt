@@ -23,7 +23,7 @@ from app.services.outbox import drain_once
 from tests.chat_tokens import DEFAULT_COMPANY_ID, bearer, caller_token
 from tests.chats import acting_for, open_chat, open_chat_id
 from tests.messages import say
-from tests.sockets import closed_with, ignoring_the_close
+from tests.sockets import closed_with, ignoring_the_close, receive_content
 
 
 async def test_removing_a_participant_closes_their_connections_in_that_chat_alone(
@@ -68,7 +68,7 @@ async def test_removing_a_participant_closes_their_connections_in_that_chat_alon
 
                 await say(client, keeping, headers, "ainda aqui")
                 await drain_once(db_session)
-                still_delivering = await elsewhere.receive_json(timeout=5)
+                still_delivering = await receive_content(elsewhere)
                 still_summarising = await own.receive_json(timeout=5)
 
     assert code == CloseCode.ACCESS_REVOKED

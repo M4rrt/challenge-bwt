@@ -8,9 +8,43 @@ through a group. Spelled once here rather than at each of the three close codes.
 """
 
 import contextlib
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 from httpx_ws import AsyncWebSocketSession, WebSocketDisconnect
+
+
+async def receive_until(
+    ws: AsyncWebSocketSession, matches: Callable[[dict], bool], *, timeout: float = 5.0
+) -> dict:
+    """Read frames until one satisfies `matches`, discarding the rest.
+
+    Presence and typing broadcast to a Chat address the same way a connecting
+    or disconnecting socket's own join/leave does, so a socket can see frames
+    about itself interleaved with the one a test is actually looking for — in
+    whichever order two concurrent connections happened to be scheduled in.
+    Reading for a shape rather than a position is what keeps a test from
+    depending on that ordering.
+    """
+    while True:
+        frame = await ws.receive_json(timeout=timeout)
+        if matches(frame):
+            return frame
+
+
+_PRESENCE_FRAME_TYPES = {"presence.snapshot", "presence.online", "presence.offline"}
+
+
+async def receive_content(ws: AsyncWebSocketSession, *, timeout: float = 5.0) -> dict:
+    """The next frame that is not presence noise, in place of a bare `receive_json`.
+
+    Ticket 12 made a chat socket announce presence on every connect and
+    disconnect over the same channel everything else arrives on, so any test
+    written before it that reads "the next frame" can now read one of these
+    instead of the frame it is actually asserting about.
+    """
+    return await receive_until(
+        ws, lambda frame: frame.get("type") not in _PRESENCE_FRAME_TYPES, timeout=timeout
+    )
 
 
 async def closed_with(ws: AsyncWebSocketSession, *, timeout: float = 5.0) -> int:

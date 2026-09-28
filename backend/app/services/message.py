@@ -107,6 +107,24 @@ async def chat_of_participant(
     return chat
 
 
+async def current_participant_ids(
+    db: AsyncSession, scope: CompanyScope, chat_id: uuid.UUID
+) -> list[uuid.UUID]:
+    """Who is currently in this Chat, and nothing else about them.
+
+    Presence needs exactly this — who to ask the presence store about — not
+    their role or their read state, so it does not ride on `chat_of_participant`
+    or a `selectinload` built for a heavier caller.
+    """
+    return list(
+        await db.scalars(
+            scope.select(Participant)
+            .with_only_columns(Participant.user_id)
+            .where(Participant.chat_id == chat_id, STILL_IN_THE_CHAT)
+        )
+    )
+
+
 async def _message_already_sent(
     db: AsyncSession,
     scope: CompanyScope,

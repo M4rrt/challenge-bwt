@@ -29,7 +29,7 @@ from app.services.outbox import drain_once
 from tests.chat_tokens import DEFAULT_COMPANY_ID, bearer, caller_token, mint_chat_token
 from tests.chats import acting_for, open_chat_id, open_chat_of
 from tests.messages import say
-from tests.sockets import closed_with, ignoring_the_close
+from tests.sockets import closed_with, ignoring_the_close, receive_content
 
 
 def expiring_in(seconds: float, user_id: str) -> str:
@@ -52,7 +52,7 @@ async def test_the_service_warns_the_connection_before_its_credential_expires(
         async with aconnect_ws(
             f"/websocket/chats/{chat_id}?token={expiring}", client=ws_client
         ) as ws:
-            warning = await ws.receive_json(timeout=5)
+            warning = await receive_content(ws)
 
     caller = verify_chat_token(expiring)
     assert caller is not None
@@ -107,15 +107,15 @@ async def test_a_new_token_over_the_same_connection_carries_it_past_the_old_expi
         async with aconnect_ws(
             f"/websocket/chats/{chat_id}?token={expiring_in(1, user_id)}", client=ws_client
         ) as ws:
-            assert (await ws.receive_json(timeout=5))["type"] == "token.expiring"
+            assert (await receive_content(ws))["type"] == "token.expiring"
 
             await ws.send_json({"type": "token.renew", "token": token})
-            confirmation = await ws.receive_json(timeout=5)
+            confirmation = await receive_content(ws)
 
             await asyncio.sleep(1.2)
             await say(client, chat_id, bearer(other_token), "ainda aqui")
             await drain_once(db_session)
-            arrived = await ws.receive_json(timeout=5)
+            arrived = await receive_content(ws)
 
     renewed = verify_chat_token(token)
     assert renewed is not None
@@ -151,7 +151,7 @@ async def test_a_renewal_from_someone_no_longer_in_the_chat_is_refused_as_access
             async with aconnect_ws(
                 f"/websocket/chats/{chat_id}?token={expiring_in(2, user_id)}", client=ws_client
             ) as ws:
-                assert (await ws.receive_json(timeout=5))["type"] == "token.expiring"
+                assert (await receive_content(ws))["type"] == "token.expiring"
 
                 removed = await client.delete(
                     f"/internal/chats/{chat_id}/participants/{user_id}",
@@ -195,16 +195,16 @@ async def test_a_renewal_that_demotes_the_caller_takes_them_off_the_staff_addres
         async with aconnect_ws(
             f"/websocket/chats/{chat_id}?token={expiring_in(2, staff_id)}", client=ws_client
         ) as ws:
-            assert (await ws.receive_json(timeout=5))["type"] == "token.expiring"
+            assert (await receive_content(ws))["type"] == "token.expiring"
 
             await ws.send_json({"type": "token.renew", "token": demoted})
-            assert (await ws.receive_json(timeout=5))["type"] == "token.renewed"
+            assert (await receive_content(ws))["type"] == "token.renewed"
 
             await say(client, chat_id, bearer(staff_token), "segredo", visibility="staff_only")
             await say(client, chat_id, bearer(staff_token), "publico")
             await drain_once(db_session)
 
-            arrived = await ws.receive_json(timeout=5)
+            arrived = await receive_content(ws)
 
     assert arrived["body"] == "publico"
 

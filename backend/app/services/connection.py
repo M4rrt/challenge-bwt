@@ -23,6 +23,7 @@ avoid.
 """
 
 import asyncio
+import json
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
@@ -32,8 +33,16 @@ from fastapi import WebSocket, WebSocketDisconnect
 from app.core.chat_token import Caller, verify_chat_token
 from app.core.close_codes import CloseCode
 from app.core.connection_schedule import ConnectionSchedule, Due
+from app.services import presence
 from app.services.denylist import is_denied
-from app.services.realtime import Address, Holder, close_quietly, connection_manager
+from app.services.realtime import (
+    Address,
+    Holder,
+    address_for_chat,
+    close_quietly,
+    connection_manager,
+    publish,
+)
 
 RENEWAL_WARNING_LEAD = timedelta(seconds=60)
 """How long before expiry the client is told to go and fetch a new token.
@@ -69,6 +78,24 @@ RENEW = "token.renew"
 
 RENEWED = "token.renewed"
 """Server → client: accepted, revalidated, and this connection carries on."""
+
+TYPING = "typing"
+"""Client → server, then server → Chat: announce it, unstored, exactly once per keystroke burst.
+
+There is no `typing.stop`. What makes it expire on its own is that nobody
+persists it: each announcement carries `expires_at` a few seconds out, and a
+client that stops hearing the sender repeat it lets its own indicator lapse at
+that deadline. A stop frame would be one more message that can be lost; a
+deadline in the message already sent cannot be.
+"""
+
+TYPING_TTL_SECONDS = 5
+"""How far out `expires_at` is set on a `typing` announcement.
+
+Long enough that ordinary keystroke gaps do not flicker the indicator off
+between repeats, short enough that someone who closed their laptop mid-word
+does not read as typing for the rest of the Chat.
+"""
 
 
 Authorise = Callable[[Caller], Awaitable[list[Address] | None]]
@@ -123,6 +150,15 @@ class Connection:
         self._authorise = authorise
         self._holder = Holder(caller.company_id, caller.id, chat_id)
         self._addresses: list[Address] = []
+        self._presence_joined = False
+        """Whether `join` actually incremented the counter for this connection.
+
+        A `join` that failed open (the store was unreachable) incremented
+        nothing, so the matching `leave` must not decrement anything either —
+        the counter is shared with every other connection this person holds
+        here, and a decrement that was never earned would take one of *those*
+        to zero instead.
+        """
         self._schedule = ConnectionSchedule.starting(
             expires_at=caller.expires_at,
             now=_now(),
@@ -139,12 +175,39 @@ class Connection:
         """
         self._addresses = addresses
         connection_manager.connect(addresses, self._websocket, self._holder)
+        self._presence_joined = await self._join_presence()
+        if self._presence_joined:
+            await self._announce_presence(presence.ONLINE)
         try:
             await self._run()
         except WebSocketDisconnect:
             pass
         finally:
             connection_manager.disconnect(self._addresses, self._websocket, self._holder)
+            if self._presence_joined and await self._leave_presence():
+                await self._announce_presence(presence.OFFLINE)
+
+    async def _join_presence(self) -> bool:
+        """Only a Chat connection has presence — the user's own socket names no Chat to be online in."""
+        if self._holder.chat_id is None:
+            return False
+        return await presence.join(self._caller.company_id, self._holder.chat_id, self._caller.id)
+
+    async def _leave_presence(self) -> bool:
+        if self._holder.chat_id is None:
+            return False
+        return await presence.leave(self._caller.company_id, self._holder.chat_id, self._caller.id)
+
+    async def _announce_presence(self, event: str) -> None:
+        chat_id = self._holder.chat_id
+        if chat_id is None:
+            return
+        await publish(
+            address_for_chat(self._caller.company_id, chat_id).channel,
+            json.dumps(
+                {"type": event, "chat_id": str(chat_id), "user_id": str(self._caller.id)}
+            ),
+        )
 
     async def _run(self) -> None:
         receiving = asyncio.create_task(self._websocket.receive_json())
@@ -178,6 +241,10 @@ class Connection:
                 return False
             case Due.REVALIDATE:
                 self._schedule.done(due, _now())
+                if self._holder.chat_id is not None:
+                    await presence.refresh(
+                        self._caller.company_id, self._holder.chat_id, self._caller.id
+                    )
                 return await self._still_allowed()
 
     async def _still_allowed(self) -> bool:
@@ -235,7 +302,33 @@ class Connection:
         if frame.get("type") == RENEW:
             offered = frame.get("token")
             return await self._renew(offered if isinstance(offered, str) else None)
+        if frame.get("type") == TYPING:
+            await self._announce_typing()
+            return True
         return True
+
+    async def _announce_typing(self) -> None:
+        """Relay a typing announcement to the Chat, unstored, addressed like any other frame.
+
+        Ignored on the user's own socket, which names no Chat to be typing in.
+        It is not addressed by visibility the way a Message is: a Staff-only
+        Message not yet sent has no content on the wire for the split to hide,
+        so there is nothing here for the end-client address to be excluded from.
+        """
+        chat_id = self._holder.chat_id
+        if chat_id is None:
+            return
+        await publish(
+            address_for_chat(self._caller.company_id, chat_id).channel,
+            json.dumps(
+                {
+                    "type": TYPING,
+                    "chat_id": str(chat_id),
+                    "user_id": str(self._caller.id),
+                    "expires_at": (_now() + timedelta(seconds=TYPING_TTL_SECONDS)).isoformat(),
+                }
+            ),
+        )
 
     async def _renew(self, token: str | None) -> bool:
         """Take a new credential for the connection already open on this socket.

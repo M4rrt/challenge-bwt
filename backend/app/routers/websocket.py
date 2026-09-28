@@ -18,8 +18,13 @@ from app.core.company_scope import CompanyScope
 from app.core.message_visibility import may_read
 from app.db import get_db
 from app.models.message import MessageVisibility
+from app.services import presence
 from app.services.connection import Authorise, Connection, admit
-from app.services.message import ChatNotFoundError, chat_of_participant
+from app.services.message import (
+    ChatNotFoundError,
+    chat_of_participant,
+    current_participant_ids,
+)
 from app.services.realtime import (
     Address,
     address_for_chat,
@@ -60,6 +65,35 @@ def _where_they_may_listen(db: AsyncSession, chat_id: uuid.UUID) -> Authorise:
     return authorise
 
 
+async def _send_presence_snapshot(
+    websocket: WebSocket, db: AsyncSession, caller: Caller, chat_id: uuid.UUID
+) -> None:
+    """Who else is already online here, the one thing a join/leave broadcast cannot tell a newcomer.
+
+    Sent once, right after accept and before anything else, so it is always the
+    connecting client's first frame about this Chat rather than a race against
+    whatever else the socket is about to receive.
+
+    `known` tells a store outage apart from a Chat where nobody happens to be
+    online — the two must not look the same to a client deciding whether to
+    trust an empty list.
+    """
+    others = [
+        user_id
+        for user_id in await current_participant_ids(db, CompanyScope.of(caller), chat_id)
+        if user_id != caller.id
+    ]
+    online = await presence.who_is_online(caller.company_id, chat_id, others)
+    await websocket.send_json(
+        {
+            "type": presence.SNAPSHOT,
+            "chat_id": str(chat_id),
+            "online": [str(user_id) for user_id in (online or [])],
+            "known": online is not None,
+        }
+    )
+
+
 async def _own_address(caller: Caller) -> list[Address] | None:
     """A user's own socket has nothing to authorise beyond the token itself.
 
@@ -88,6 +122,7 @@ async def chat_socket(
         return
 
     await websocket.accept()
+    await _send_presence_snapshot(websocket, db, caller, chat_id)
     await Connection(
         websocket, caller=caller, token=token, authorise=authorise, chat_id=chat_id
     ).serve(addresses)
