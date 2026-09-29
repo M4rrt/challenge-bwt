@@ -7,7 +7,7 @@ from jose import jwt
 
 from app.core.chat_token import SUPERVISION_SCOPE, is_supervisor, verify_chat_token
 from app.core.config import settings
-from tests.chat_tokens import make_caller, mint_chat_token
+from tests.chat_tokens import OTHER_KEY_PAIR, TEST_KEY_PAIR, make_caller, mint_chat_token, unsigned_token
 
 
 async def test_me_returns_the_identity_the_token_carries(client: AsyncClient):
@@ -47,8 +47,66 @@ async def test_me_rejects_a_token_the_service_cannot_verify(client: AsyncClient)
     assert response.status_code == 401
 
 
-async def test_me_rejects_a_token_signed_with_another_secret(client: AsyncClient):
-    token = mint_chat_token(secret="a-secret-the-service-does-not-hold")
+async def test_me_rejects_a_token_signed_with_a_key_the_service_does_not_hold(
+    client: AsyncClient,
+):
+    """The same `kid` the service trusts, but a different key behind it.
+
+    Distinct from an unknown `kid`: here the header names a key the service
+    *does* recognise, so the rejection has to come from the signature check
+    itself, not from a lookup that never finds the key.
+    """
+    token = mint_chat_token(key_pair=OTHER_KEY_PAIR)
+
+    response = await client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 401
+
+
+async def test_me_rejects_a_token_with_an_unknown_kid(client: AsyncClient):
+    token = mint_chat_token(kid="a-kid-the-service-has-never-published")
+
+    response = await client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 401
+
+
+async def test_me_rejects_a_token_declaring_alg_none(client: AsyncClient):
+    """The classic algorithm-confusion probe: opt out of a signature entirely.
+
+    A caller who controls their own header must not be able to make the
+    service skip verification just by asking for `alg: none`.
+    """
+    token = unsigned_token(
+        {
+            "sub": str(uuid.uuid4()),
+            "aud": settings.chat_token_audience,
+            "exp": (datetime.now(timezone.utc) + timedelta(minutes=15)).timestamp(),
+            "https://brwinetours.com/chat": {
+                "user_kind": "staff",
+                "scopes": ["chat:read"],
+                "display_name": "Ana Souza",
+                "avatar_url": None,
+                "company_id": "11111111-1111-1111-1111-111111111111",
+            },
+        }
+    )
+
+    response = await client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 401
+
+
+async def test_me_rejects_a_token_with_no_audience(client: AsyncClient):
+    token = mint_chat_token(audience=None)
+
+    response = await client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 401
+
+
+async def test_me_rejects_a_token_with_the_wrong_audience(client: AsyncClient):
+    token = mint_chat_token(audience="some-other-product")
 
     response = await client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
 
@@ -64,8 +122,14 @@ async def test_me_rejects_an_expired_token(client: AsyncClient):
 
 
 async def test_me_rejects_a_token_carrying_no_chat_claims(client: AsyncClient):
+    token = mint_chat_token()
+    claims = jwt.get_unverified_claims(token)
+    del claims["https://brwinetours.com/chat"]
     token = jwt.encode(
-        {"sub": str(uuid.uuid4())}, settings.jwt_secret_key, algorithm=settings.jwt_algorithm
+        claims,
+        TEST_KEY_PAIR.private_pem,
+        algorithm="RS256",
+        headers={"kid": TEST_KEY_PAIR.kid},
     )
 
     response = await client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})

@@ -692,12 +692,13 @@ O webhook é o único chamador sem token: ele nomeia a Company no próprio paylo
 
 Não bloqueia o funcionamento hoje, mas seria o primeiro ponto de atenção antes de qualquer uso com carga real:
 
-- **BLOQUEADOR DE PRODUÇÃO: o chat token ainda é HS256.** `app/core/chat_token.py`
-  verifica com um segredo compartilhado, então o serviço **consegue emitir um
-  token que ele próprio aceita**. O [ADR-0009](../docs/adr/0009-chat-owns-token-in-rs256.md)
-  foi aceito justamente para remover essa propriedade e ainda não está
-  implementado. Ticket 19 troca por RS256 + `kid` + JWKS + `aud` obrigatório.
-  Nada abaixo desta linha é um risco da mesma ordem.
+- ~~**BLOQUEADOR DE PRODUÇÃO: o chat token ainda é HS256.**~~ *(Resolvido no
+  ticket 19: `app/core/chat_token.py` verifica RS256 + `kid`, `aud` é
+  obrigatório e verificado, e `app/services/chat_token_keys.py` consulta
+  `CHAT_TOKEN_JWKS_URL` de forma oportunista para rotação, caindo de volta na
+  última chave conhecida se a busca falhar. O serviço não guarda mais nenhum
+  segredo capaz de assinar um token que ele próprio aceitaria. Ver
+  [ADR-0009](../docs/adr/0009-chat-owns-token-in-rs256.md).)*
 - **Uma linha ruim para o tempo real inteiro.** `drain_once` sempre pega a linha pendente **mais antiga**. Se publicá-la falhar de forma permanente, `run_forever` captura, dorme e pega a mesma linha de novo — para sempre — e tudo atrás dela nunca sai. Não é entrega degradada: é tempo real parado para o serviço todo por causa de uma linha. Hoje o drain só faz `redis.publish`, onde o que falha é conexão e isso derruba todas as linhas igualmente, então o raio é grande e a probabilidade baixa; ela sobe no ticket 15, que põe HTTP para o monólito no mesmo caminho. Ticket 21.
 - **A tabela `outbox` cresce sem coletor.** A linha publicada fica com `published_at` preenchida em vez de ser apagada, o que dá rastro de o que saiu e quando — é o que o ticket 18 monitora e o que responde "esse evento saiu?" depois de um incidente. Nada poda as linhas antigas ainda. O índice do drain é parcial (`WHERE published_at IS NULL`), então a varredura não degrada junto; o que cresce é o disco. Ticket 21.
 - **As rotas internas não são inalcançáveis da internet, só autenticadas.** O ALB do `infra/` encaminha todo

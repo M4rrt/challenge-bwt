@@ -467,9 +467,17 @@ def test_no_module_of_the_service_holds_an_http_client():
     """
     clients = {"httpx", "requests", "aiohttp", "urllib", "urllib3", "http"}
     application = Path(__file__).resolve().parent.parent / "app"
+    # Named exemption, per the docstring above: app/services/chat_token_keys.py
+    # is the JWKS-URL refresh loop from ADR-0009/ticket 19. It never runs
+    # inside a request — it is a background task the lifespan owns, polling
+    # on its own schedule — and a failed fetch never blocks or fails anything
+    # that is. Outbound and asynchronous, exactly what this test allows.
+    exempt = {application / "services" / "chat_token_keys.py"}
     offenders: list[str] = []
 
     for source in sorted(application.rglob("*.py")):
+        if source in exempt:
+            continue
         for node in ast.walk(ast.parse(source.read_text())):
             imported = (
                 [alias.name for alias in node.names]

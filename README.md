@@ -42,15 +42,12 @@ Lista completa de itens deferidos em [`docs/decisions.md`](docs/decisions.md#def
 - **Offline/unread tracking.** Hoje um participante desconectado busca o backlog via REST ao reconectar, sem read receipts ou contagem de não lidas — é a primeira coisa que eu adicionaria, por ser uma feature genuinamente separada (estado próprio, UI, casos de borda).
 - **Rodar sem Redis, single-instance.** O fan-out via Redis pub/sub ([ADR-0003](docs/adr/0003-redis-pubsub-for-horizontal-scaling.md)) foi construído agora, e não deferido, porque escalabilidade é critério avaliado — a alternativa mais simples (uma única instância do backend com um registro de conexões em memória, sem Redis) foi discutida e descartada por esse motivo. O design foi validado por leitura/revisão, mas nunca testado de fato com duas ou mais réplicas do backend rodando simultaneamente; com mais tempo, validaria esse comportamento fim a fim antes de confiar nele em produção.
 - **Extras não perseguidos:** bot de LLM no chat, microfrontends, WebSocket nativo via AWS API Gateway ([ADR-0001](docs/adr/0001-containerized-websocket-over-api-gateway.md)), filas (SQS/Kafka) para desacoplar o processamento, arquitetura de microsserviços, pipeline de CI/CD e observabilidade (logs estruturados, métricas, tracing). Auth (JWT) e Tests foram os extras priorizados no orçamento de 8-16h; os demais ficam para depois, nessa ordem de prioridade.
-- **BLOQUEADOR DE PRODUÇÃO — o chat token ainda é assinado em HS256.** O serviço
-  verifica o token com um segredo compartilhado, ou seja, **ele guarda material
-  capaz de emitir um token que ele próprio aceitaria**. É exatamente a
-  propriedade que o [ADR-0009](docs/adr/0009-chat-owns-token-in-rs256.md) existe
-  para eliminar: em RS256 o serviço guarda só a chave pública e não consegue
-  assinar nada. Enquanto isso não mudar, comprometer este serviço é comprometer
-  toda identidade do chat. O ticket 01 fechou o *contrato de claims* (que era o
-  que bloqueava o resto da spec) e deixou a assinatura de propósito; a troca é o
-  ticket 19, e **tem que entrar antes de qualquer tráfego de produção**.
+- ~~**BLOQUEADOR DE PRODUÇÃO — o chat token ainda é assinado em HS256.**~~
+  *(Resolvido no ticket 19: `app/core/chat_token.py` verifica RS256 contra uma
+  chave pública selecionada por `kid`, e o serviço não guarda mais nenhum
+  material capaz de assinar um token que ele próprio aceitaria — a garantia do
+  [ADR-0009](docs/adr/0009-chat-owns-token-in-rs256.md) agora é verdadeira do
+  código em execução, não só da decisão aceita.)*
 - **Gaps de segurança/robustez conhecidos:**
   - Sem proteção contra replay na assinatura do webhook.
   - Sem checagem de que o `chat_id` do webhook pertence a um participante — o segredo HMAC é a única fronteira de confiança.

@@ -3,7 +3,12 @@ name: challenge-bwt
 x-backend-env: &backend-env
   DATABASE_URL: postgresql+asyncpg://chat:chat@db:5432/chat
   REDIS_URL: redis://redis:6379/0
-  JWT_SECRET_KEY: change-me
+  # Two keys: the fixture pair tests/chat_tokens.py signs with, and the
+  # monolith's real local-dev public key (kid bwt-chat-dev-1, published at
+  # http://localhost:8000/.well-known/chat-jwks.json) — needed to verify
+  # tokens minted by a locally running br-wine-tours-backend.
+  CHAT_TOKEN_JWKS: '{"keys": [{"alg": "RS256", "kty": "RSA", "n": "065cm5vw-A5Qg8bvn1aJeb9jRP19OUDNtJP_-b3l3e2I36TMkCS6I8Xiv_SgkX2q4xcac_9--jy6ya3KjHHaaDXMuTCTcCpyRUa9j8UyrfuWlwYUIesqfD6L8yjY6oxSwZqtDgZ3R8wc35661UMXWGyNpA_SPi-V6JXOU_TnLoAJPxurnGKBCBG0SSNd_-u1Ofh-vvllIxvvlYRLk2zAzDAGZk2ziJ6o4EKgmriTEdjS2H1Y6qfmZgMs7u8A4J3omvMDQ7YbEjF0qLuDkHBMtrRdpVVtu-i7Qe2XXXyaVoVxqGA-JgjHbk3JrESw_p4O8RIlavGEc7CV8-CJPQnGQw", "e": "AQAB", "kid": "test-chat-key-1", "use": "sig"}, {"kty": "RSA", "key_ops": ["verify"], "n": "zcU2yyKgeypt7JrD2Th1_f4HRYcvNTb-VDjv1V5BlvwrQ1YRVe_hD3AZDLAWD9Gm8tigTXdIrrEPTRtUqGqlHssnITu5HuSLp4rqG-CzTcuvOew1CaiYIZf6dK4eT1eF_ut1JgM8qlb3VTKnsAdTmLUwKj_D1uJ1FAULyGV1nXEFX6vgklPRU5GIq0ZrdkZNndk-YASr8_ZObf75x_u0wtYx2GgKZZ1jvOiEAQjN31vUB54HEBAFNpaMc2JDitj08zrH0gl2T-JU6rZFlirF-j0N9awMI3-XSyTFgvRKVFvwCSfnA-ArbiFGoMmLbZYyTNrDjqhOJeNxPWRdTEfNaQ", "e": "AQAB", "kid": "bwt-chat-dev-1", "alg": "RS256", "use": "sig"}]}'
+  CHAT_TOKEN_AUDIENCE: bwt-chat
   WEBHOOK_HMAC_SECRET: change-me
   INTERNAL_SERVICE_TOKEN: change-me
   PYTHONDONTWRITEBYTECODE: 1
@@ -28,7 +33,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6380:6379"
+      - "6381:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s

@@ -1,16 +1,21 @@
 # Chat has a token of its own, in RS256, and the service can never mint one
 
-**Status:** accepted — **not yet implemented.** Tracked by
-`.scratch/bwt-chat-microservice/issues/19-chat-token-signed-rs256.md`.
+**Status:** accepted — implemented by ticket 19.
+`app/core/chat_token.py` verifies RS256 against a public key selected by
+`kid`, sourced from `CHAT_TOKEN_JWKS` and kept current by
+`app/services/chat_token_keys.py`'s opportunistic JWKS-URL refresh. The
+service holds no material that can sign a token it would accept. It also checks
+`iss` whenever `CHAT_TOKEN_ISSUER` is set.
 
-> **The service can still mint tokens today.** Ticket 01 took the chat token's
-> *claims* — which is what the rest of the spec was blocked on — and deliberately
-> left the signature alone: verification is HS256 against a shared secret. So the
-> central guarantee below, that a compromised chat service cannot impersonate
-> anyone, **is not true of the running code**. It becomes true when ticket 19
-> lands, which must happen before this service sees production traffic. Everything
-> else in this ADR describes the decision as accepted, not as shipped.
+The monolith side is the `chat_session` app: it issues the token at
+`POST /chat/sessions/token/` and publishes the public key at
+`/.well-known/chat-jwks.json`. A token from the monolith's own issuer was
+verified by this service's own verifier.
 
+The monolith keys users and companies by integer and this service by UUID, so
+the token's `sub` and `company_id` are UUID v5 derived from a fixed namespace
+(`chat_session/identifiers.py` in the monolith). The namespace must never change:
+it would re-identify everyone in chat.
 
 The service does not verify the product's access token. The monolith issues a
 **chat token** of its own, from a dedicated endpoint, signed with RS256 and a key

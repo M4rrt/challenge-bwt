@@ -1,6 +1,7 @@
 import { ApiError, readJsonBody } from './api'
 
-const DEFAULT_MONOLITH_URL = 'http://localhost:3000'
+// The Django monolith. Not :3000, which is the BWT frontend's own dev server.
+const DEFAULT_MONOLITH_URL = 'http://localhost:8000'
 
 /**
  * Fixed, unlike api.ts's getApiUrl()/getWsUrl(): the chat service's address is what redemption

@@ -2,18 +2,19 @@
 
 The service has no login: the monolith is the only issuer of a chat token, so
 there is no request a developer can make to obtain one. This is what fills that
-gap for Insomnia and curl — the same secret and the same claim shape the service
-verifies, which is also what `tests/chat_tokens.py` does for the suite.
+gap for Insomnia and curl — signed with the same test key pair, and the same
+claim shape, that `tests/chat_tokens.py` uses for the suite.
 
     uv run python -m scripts.mint_chat_token                  # one staff caller
     uv run python -m scripts.mint_chat_token --kind client    # an end client
     uv run python -m scripts.mint_chat_token --insomnia       # a whole fixture set
 
 NOT A PRODUCTION TOOL, and it cannot become one: it works only because the
-service still verifies HS256 against a shared secret, which is the property
-ADR-0009 exists to remove. When ticket 19 lands RS256, this script needs the
-test private key and the service will hold only the public half — which is the
-point, and this file is one of the places that will have to say so.
+public half of the key it signs with is what local `.env`/`.env.example` put in
+`CHAT_TOKEN_JWKS`. A real deployment's `CHAT_TOKEN_JWKS` names the monolith's
+keys, whose private halves this repo never holds — that is the whole guarantee
+ADR-0009 describes, and this script existing at all depends on it staying true
+only in development.
 """
 
 import argparse
@@ -25,6 +26,7 @@ from jose import jwt
 
 from app.core.chat_token import CHAT_CLAIM_NAMESPACE
 from app.core.config import settings
+from tests.chat_tokens import TEST_KEY_PAIR
 
 DEFAULT_COMPANY_ID = uuid.UUID("11111111-1111-1111-1111-111111111111")
 """One Company unless a caller names another, so crossing the boundary is deliberate.
@@ -44,6 +46,7 @@ def mint(
 ) -> str:
     claims = {
         "sub": str(user_id),
+        "aud": settings.chat_token_audience,
         "exp": datetime.now(timezone.utc) + timedelta(minutes=minutes),
         CHAT_CLAIM_NAMESPACE: {
             "company_id": str(company_id),
@@ -53,7 +56,12 @@ def mint(
             "avatar_url": None,
         },
     }
-    return jwt.encode(claims, settings.jwt_secret_key, algorithm="HS256")
+    return jwt.encode(
+        claims,
+        TEST_KEY_PAIR.private_pem,
+        algorithm="RS256",
+        headers={"kid": TEST_KEY_PAIR.kid},
+    )
 
 
 _FIXTURES = (

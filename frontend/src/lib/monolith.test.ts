@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from './api'
-import { issueChatToken, redeemExchangeCode } from './monolith'
+import { issueChatToken, MONOLITH_URL, redeemExchangeCode } from './monolith'
 
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn())
@@ -26,7 +26,7 @@ describe('redeemExchangeCode', () => {
     const result = await redeemExchangeCode('exchange-code-abc')
 
     expect(fetch).toHaveBeenCalledWith(
-      'http://localhost:3000/chat/sessions/redeem',
+      `${MONOLITH_URL}/chat/sessions/redeem`,
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ code: 'exchange-code-abc' }),
@@ -57,7 +57,7 @@ describe('issueChatToken', () => {
     const result = await issueChatToken('renewal-123')
 
     expect(fetch).toHaveBeenCalledWith(
-      'http://localhost:3000/chat/sessions/token',
+      `${MONOLITH_URL}/chat/sessions/token`,
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ renewal_token: 'renewal-123' }),

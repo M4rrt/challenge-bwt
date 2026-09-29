@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.routers import auth, chats, internal, messages, webhook, websocket
+from app.services.chat_token_keys import run_jwks_refresh
 from app.services.realtime import run_subscriber
 
 
@@ -15,12 +16,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     subscribed = asyncio.Event()
     subscriber_task = asyncio.create_task(run_subscriber(subscribed))
     await subscribed.wait()
+
+    jwks_started = asyncio.Event()
+    jwks_refresh_task = asyncio.create_task(run_jwks_refresh(jwks_started))
+    await jwks_started.wait()
     try:
         yield
     finally:
         subscriber_task.cancel()
+        jwks_refresh_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await subscriber_task
+        with contextlib.suppress(asyncio.CancelledError):
+            await jwks_refresh_task
 
 
 app = FastAPI(lifespan=lifespan)
