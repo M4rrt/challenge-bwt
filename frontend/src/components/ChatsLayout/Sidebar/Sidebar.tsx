@@ -2,6 +2,7 @@ import type { UIEvent } from 'react'
 import { useCallback, useEffect, useState } from 'react'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import List from '@mui/material/List'
@@ -18,6 +19,7 @@ import { getMe, listChats } from '../../../lib/api'
 import { useAuth } from '../../../lib/auth/AuthContext'
 import { chatLabel } from '../chatLabel'
 import { skyScrollbarSx } from '../scrollbarStyle'
+import StartChat from '../StartChat/StartChat'
 import { skyTextFieldSx } from '../textFieldStyle'
 import { useUserSocket } from './useUserSocket'
 
@@ -106,22 +108,25 @@ function Sidebar() {
           input: { startAdornment: <SearchIcon fontSize="small" sx={{ mr: 0.75, color: 'primary.main' }} /> },
         }}
       />
-      <Typography
-        variant="h6"
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 0.75,
-          fontSize: '0.75rem',
-          fontWeight: 700,
-          textTransform: 'uppercase',
-          letterSpacing: 0.5,
-          color: 'primary.dark',
-        }}
-      >
-        <GroupIcon fontSize="small" sx={{ color: 'primary.main' }} />
-        Chats ({chats.length})
-      </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Typography
+          variant="h6"
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 0.75,
+            fontSize: '0.75rem',
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: 0.5,
+            color: 'primary.dark',
+          }}
+        >
+          <GroupIcon fontSize="small" sx={{ color: 'primary.main' }} />
+          Chats ({chats.length})
+        </Typography>
+        <StartChat />
+      </Box>
       <List
         onScroll={handleScroll}
         sx={{ flex: 1, minHeight: 0, overflowY: 'auto', ...skyScrollbarSx }}

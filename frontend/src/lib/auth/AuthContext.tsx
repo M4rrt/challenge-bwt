@@ -10,6 +10,7 @@ const WS_URL_STORAGE_KEY = 'chat-app:ws-url'
 
 interface AuthContextValue {
   token: string | null
+  renewalToken: string | null
   isAuthenticated: boolean
   login: (token: string, renewalToken: string, apiUrl: string, wsUrl: string) => void
   logout: () => void
@@ -78,7 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [renewalToken])
 
   return (
-    <AuthContext.Provider value={{ token, isAuthenticated: token !== null, login, logout }}>
+    <AuthContext.Provider value={{ token, renewalToken, isAuthenticated: token !== null, login, logout }}>
       {children}
     </AuthContext.Provider>
   )

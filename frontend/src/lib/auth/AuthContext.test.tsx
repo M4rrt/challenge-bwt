@@ -39,6 +39,14 @@ describe('AuthContext', () => {
     expect(result.current.token).toBe('existing-token')
   })
 
+  it('exposes the renewal token restored from localStorage on mount', () => {
+    localStorage.setItem('chat-app:renewal-token', 'existing-renewal-token')
+
+    const { result } = renderHook(() => useAuth(), { wrapper })
+
+    expect(result.current.renewalToken).toBe('existing-renewal-token')
+  })
+
   it('restores the persisted service URLs on mount, before anything renders against them', () => {
     localStorage.setItem('chat-app:api-url', 'https://chat.example.com')
     localStorage.setItem('chat-app:ws-url', 'wss://chat.example.com')
@@ -58,6 +66,7 @@ describe('AuthContext', () => {
 
     expect(result.current.isAuthenticated).toBe(true)
     expect(result.current.token).toBe('new-token')
+    expect(result.current.renewalToken).toBe('new-renewal-token')
     expect(localStorage.getItem('chat-app:token')).toBe('new-token')
     expect(localStorage.getItem('chat-app:renewal-token')).toBe('new-renewal-token')
     expect(localStorage.getItem('chat-app:api-url')).toBe('https://chat.example.com')
@@ -74,6 +83,7 @@ describe('AuthContext', () => {
     act(() => result.current.logout())
 
     expect(result.current.isAuthenticated).toBe(false)
+    expect(result.current.renewalToken).toBeNull()
     expect(localStorage.getItem('chat-app:token')).toBeNull()
     expect(localStorage.getItem('chat-app:renewal-token')).toBeNull()
   })

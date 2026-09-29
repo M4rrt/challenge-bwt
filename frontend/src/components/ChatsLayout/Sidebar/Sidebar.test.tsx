@@ -87,6 +87,13 @@ beforeEach(() => {
 })
 
 describe('Sidebar', () => {
+  it('has a "start a chat" entry point', async () => {
+    vi.mocked(listChats).mockResolvedValue(page([]))
+    renderChats()
+
+    expect(await screen.findByRole('button', { name: 'Iniciar novo chat' })).toBeInTheDocument()
+  })
+
   it('shows the chat count in the list header', async () => {
     vi.mocked(listChats).mockResolvedValue(
       page([
